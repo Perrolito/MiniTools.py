@@ -11,6 +11,8 @@ A small but modern looking GUI application for Linux system information and main
 - **Modern UI**: Clean, responsive interface with dark/light theme support
 - **Customizable**: Adjustable font size for the output log
 
+![PREVIEW](preview.png)
+
 ## Requirements
 
 - Python 3.6+
