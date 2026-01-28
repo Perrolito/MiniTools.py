@@ -794,7 +794,8 @@ class MiniToolsGUI(QMainWindow):
         self.center_window()
         
         self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
-        self.log("Mini Tools - Ready", LogLevel.INFO)
+        self.log(f"{__app_name__} - Ready", LogLevel.INFO)
+        self.log(f"Version: {__version__}", LogLevel.INFO)
         self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
         self.log("Welcome! Click any button to use the tools.", LogLevel.INFO)
         
