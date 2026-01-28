@@ -4,6 +4,8 @@ Mini Tools - PyQt6 Version
 A modern, professional GUI application for system information and maintenance
 """
 
+__version__ = "1.0.1"
+
 import os
 import sys
 import subprocess
@@ -887,7 +889,7 @@ class MiniToolsGUI(QMainWindow):
             return
         
         self.log_text.clear()
-        self._redisplay_log_messages()
+        self._redisplay_log_messages(update_font=True)
     
     def _redisplay_log_messages(self, update_font: bool = False):
         """
@@ -925,9 +927,9 @@ class MiniToolsGUI(QMainWindow):
     
     def show_about(self):
         """Show about information"""
-        about_text = """
+        about_text = f"""
 MiniTools
-Version: 1.0.0
+Version: {__version__}
 
 Dependencies:
 - Python 3.6+

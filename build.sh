@@ -36,8 +36,11 @@ echo ""
 
 # Get version from script or use default
 VERSION="1.0.0"
-if [ -f "../MiniTools.py" ]; then
-    VERSION=$(grep "__version__" ../MiniTools.py 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
+if [ -f "MiniTools.py" ]; then
+    VERSION=$(grep "__version__" MiniTools.py 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
+    echo -e "${BLUE}Detected version from MiniTools.py: $VERSION${NC}"
+else
+    echo -e "${YELLOW}MiniTools.py not found, using default version: $VERSION${NC}"
 fi
 
 echo -e "${GREEN}Building MiniTools version: $VERSION${NC}"
