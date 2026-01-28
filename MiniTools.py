@@ -4,7 +4,9 @@ Mini Tools - PyQt6 Version
 A modern, professional GUI application for system information and maintenance
 """
 
-__version__ = "1.0.1"
+__app_name__ = "Mini Tools"
+__version__ = "1.0.2"
+__author__ = "Ezra"
 
 import os
 import sys
@@ -15,6 +17,14 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional, List, Tuple, Callable
+from enum import Enum
+
+class LogLevel(Enum):
+    """Log level enumeration"""
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QMessageBox, QTextEdit, QFrame,
@@ -142,7 +152,7 @@ class Config:
     }
     
     # Log levels
-    LOG_LEVELS = ["info", "success", "warning", "error"]
+    LOG_LEVELS = [LogLevel.INFO.value, LogLevel.SUCCESS.value, LogLevel.WARNING.value, LogLevel.ERROR.value]
     
     # Supported script extensions
     SUPPORTED_SCRIPT_EXTENSIONS = ['.sh', '.py']
@@ -761,7 +771,7 @@ class MiniToolsGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("Mini Tools")
+        self.setWindowTitle(__app_name__)
         screen = self.screen().availableGeometry()
         screen_width = screen.width()
         screen_height = screen.height()
@@ -783,39 +793,39 @@ class MiniToolsGUI(QMainWindow):
         self.apply_theme()
         self.center_window()
         
-        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info")
-        self.log("Mini Tools - Ready", "info")
-        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "info")
-        self.log("Welcome! Click any button to use the tools.", "info")
+        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
+        self.log("Mini Tools - Ready", LogLevel.INFO)
+        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
+        self.log("Welcome! Click any button to use the tools.", LogLevel.INFO)
         
         # Auto-detect and run fastfetch/neofetch on startup
         QTimer.singleShot(500, self._auto_run_fetch_tool)
     
     def _show_system_overview(self):
         """Show quick system overview on startup"""
-        self.log("Loading system overview...", "info")
+        self.log("Loading system overview...", LogLevel.INFO)
         self.show_cpu_info()
     
     def _auto_run_fetch_tool(self):
         """Auto-detect and run fastfetch/neofetch on startup"""
         # Check for fastfetch first
         if shutil.which("fastfetch"):
-            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info")
-            self.log("Running fastfetch", "success")
-            self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "info")
+            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
+            self.log("Running fastfetch", LogLevel.SUCCESS)
+            self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
             self._run_fetch_command("fastfetch", "--logo", "none", "--color", "none", "--structure", "title:separator:os:kernel:uptime:packages:shell:resolution:de:wm:theme:terminal:cpu:gpu:memory")
         # Check for neofetch as fallback
         elif shutil.which("neofetch"):
-            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info")
-            self.log("Running neofetch", "success")
-            self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "info")
+            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
+            self.log("Running neofetch", LogLevel.SUCCESS)
+            self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
             self._run_fetch_command("neofetch", "--config", "none", "--disable", "logo", "color", "cpu", "gpu")
         else:
-            self.log("\nNote: fastfetch or neofetch not installed.", "info")
-            self.log("Install one of them for better system overview.", "info")
+            self.log("\nNote: fastfetch or neofetch not installed.", LogLevel.INFO)
+            self.log("Install one of them for better system overview.", LogLevel.INFO)
             self.log("  Debian/Ubuntu: sudo apt install fastfetch")
             self.log("  Fedora/RHEL: sudo dnf install fastfetch")
-            self.log("  Arch: sudo pacman -S fastfetch\n", "info")
+            self.log("  Arch: sudo pacman -S fastfetch\n", LogLevel.INFO)
     
     def _run_fetch_command(self, command, *args):
         """Run fetch command and display output"""
@@ -834,13 +844,13 @@ class MiniToolsGUI(QMainWindow):
                 # Display output line by line
                 for line in stdout.split('\n'):
                     if line.strip():
-                        self.log(line, "info")
-                self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "info")
+                        self.log(line, LogLevel.INFO)
+                self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
             else:
-                self.log(f"Error running {command}: {stderr}", "error")
+                self.log(f"Error running {command}: {stderr}", LogLevel.ERROR)
                 
         except Exception as e:
-            self.log(f"Error running {command}: {str(e)}", "error")
+            self.log(f"Error running {command}: {str(e)}", LogLevel.ERROR)
     
     def center_window(self):
         """Center window on screen"""
@@ -849,8 +859,13 @@ class MiniToolsGUI(QMainWindow):
         frame.moveCenter(screen)
         self.move(frame.topLeft())
     
-    def log(self, message, level="info"):
-        """Add a message to the log"""
+    def log(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
+        """Add a message to the log
+        
+        Args:
+            message: The message to log
+            level: Log level (INFO, SUCCESS, WARNING, ERROR)
+        """
         if not hasattr(self, 'log_text'):
             return
         
@@ -858,13 +873,13 @@ class MiniToolsGUI(QMainWindow):
         
         # Choose colors based on theme
         colors = Config.DARK_COLORS if self.dark_mode else Config.LIGHT_COLORS
-        color = colors.get(level, colors["info"])
+        color = colors.get(level.value, colors[LogLevel.INFO.value])
         timestamp_color = colors["timestamp"]
         
         formatted_message = f'<span style="color: {timestamp_color};">[{timestamp}]</span> <span style="color: {color}; font-size: {self.log_font_size}pt;">{message}</span>'
         
         # Save to history
-        self.log_history.append((message, level))
+        self.log_history.append((message, level.value))
         
         self.log_text.append(formatted_message)
     
@@ -935,7 +950,7 @@ Dependencies:
 - Python 3.6+
 - PyQt6
 
-Author: Ezra
+Author: {__author__}
 Repository: https://github.com/Perrolito/MiniTools.py
 
 License: GNU General Public License v3.0 (GPL-3.0)
@@ -962,9 +977,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     
     def change_partition_uuid(self):
         """Change partition UUID"""
-        self.log("\n" + "="*80, "info")
-        self.log("Change Partition UUID", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Change Partition UUID", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         # Get partition device
         partition_device, ok = QInputDialog.getText(
@@ -975,20 +990,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         )
         
         if not ok or not partition_device:
-            self.log("Operation cancelled.\n", "info")
+            self.log("Operation cancelled.\n", LogLevel.INFO)
             return
         
         partition_device = partition_device.strip()
         
         # Validate partition device
         if not partition_device.startswith("/dev/"):
-            self.log(f"Error: Invalid partition device '{partition_device}'. Must start with /dev/\n", "error")
+            self.log(f"Error: Invalid partition device '{partition_device}'. Must start with /dev/\n", LogLevel.ERROR)
             return
         
-        self.log(f"Partition device: {partition_device}", "info")
+        self.log(f"Partition device: {partition_device}", LogLevel.INFO)
         
         # Detect partition filesystem type
-        self.log("Detecting partition filesystem type...", "info")
+        self.log("Detecting partition filesystem type...", LogLevel.INFO)
         try:
             result = subprocess.run(
                 ["pkexec", "blkid", "-o", "value", "-s", "TYPE", partition_device],
@@ -998,29 +1013,29 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
             filesystem = result.stdout.strip()
             returncode = result.returncode
             
-            self.log(f"blkid return code: {returncode}", "info")
-            self.log(f"blkid stdout: '{filesystem}'", "info")
+            self.log(f"blkid return code: {returncode}", LogLevel.INFO)
+            self.log(f"blkid stdout: '{filesystem}'", LogLevel.INFO)
             if result.stderr:
-                self.log(f"blkid stderr: {result.stderr.strip()}", "warning")
+                self.log(f"blkid stderr: {result.stderr.strip()}", LogLevel.WARNING)
             
             if not filesystem:
-                self.log(f"Error: Could not detect filesystem type for {partition_device}\n", "error")
-                self.log("Possible reasons:", "info")
-                self.log("  - Device does not exist", "info")
-                self.log("  - Device is not a partition (may be a disk itself)", "info")
-                self.log("  - Device has no filesystem (not formatted)", "info")
-                self.log("  - Device is not accessible (permissions)\n", "info")
+                self.log(f"Error: Could not detect filesystem type for {partition_device}\n", LogLevel.ERROR)
+                self.log("Possible reasons:", LogLevel.INFO)
+                self.log("  - Device does not exist", LogLevel.INFO)
+                self.log("  - Device is not a partition (may be a disk itself)", LogLevel.INFO)
+                self.log("  - Device has no filesystem (not formatted)", LogLevel.INFO)
+                self.log("  - Device is not accessible (permissions)\n", LogLevel.INFO)
                 return
             
-            self.log(f"Detected filesystem: {filesystem}\n", "success")
+            self.log(f"Detected filesystem: {filesystem}\n", LogLevel.SUCCESS)
         except Exception as e:
-            self.log(f"Error detecting filesystem: {str(e)}\n", "error")
+            self.log(f"Error detecting filesystem: {str(e)}\n", LogLevel.ERROR)
             return
         
         # Show partition information
-        self.log("Partition Information:", "info")
-        self.log(f"  Device: {partition_device}", "info")
-        self.log(f"  Filesystem: {filesystem}", "info")
+        self.log("Partition Information:", LogLevel.INFO)
+        self.log(f"  Device: {partition_device}", LogLevel.INFO)
+        self.log(f"  Filesystem: {filesystem}", LogLevel.INFO)
         
         try:
             result = subprocess.run(
@@ -1028,16 +1043,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
                 capture_output=True,
                 text=True
             )
-            self.log(f"  Current info: {result.stdout.strip()}", "info")
+            self.log(f"  Current info: {result.stdout.strip()}", LogLevel.INFO)
         except Exception as e:
-            self.log(f"  Could not get current info: {str(e)}", "warning")
+            self.log(f"  Could not get current info: {str(e)}", LogLevel.WARNING)
         
         self.log("")
         
         # Generate new UUID
         import uuid
         new_uuid = str(uuid.uuid4())
-        self.log(f"Generated new UUID: {new_uuid}\n", "warning")
+        self.log(f"Generated new UUID: {new_uuid}\n", LogLevel.WARNING)
         
         # Show confirmation dialog with details
         confirmation_text = f"""
@@ -1062,10 +1077,10 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Operation cancelled by user.\n", "info")
+            self.log("Operation cancelled by user.\n", LogLevel.INFO)
             return
         
-        self.log("Changing partition UUID...", "warning")
+        self.log("Changing partition UUID...", LogLevel.WARNING)
         
         # Execute UUID change command
         try:
@@ -1076,17 +1091,17 @@ Please verify the information above is correct.
             elif filesystem in ["btrfs"]:
                 command = ["pkexec", "btrfstune", "-u", new_uuid, partition_device]
             elif filesystem in ["vfat", "fat32"]:
-                self.log("Warning: FAT32 filesystem does not support UUID change directly.\n", "warning")
-                self.log("You may need to reformat the partition.\n", "warning")
+                self.log("Warning: FAT32 filesystem does not support UUID change directly.\n", LogLevel.WARNING)
+                self.log("You may need to reformat the partition.\n", LogLevel.WARNING)
                 return
             elif filesystem in ["swap"]:
                 command = ["pkexec", "mkswap", "-U", new_uuid, partition_device]
             else:
-                self.log(f"Error: Unsupported filesystem '{filesystem}' for UUID change\n", "error")
-                self.log("Supported filesystems: ext2, ext3, ext4, xfs, btrfs, swap\n", "info")
+                self.log(f"Error: Unsupported filesystem '{filesystem}' for UUID change\n", LogLevel.ERROR)
+                self.log("Supported filesystems: ext2, ext3, ext4, xfs, btrfs, swap\n", LogLevel.INFO)
                 return
             
-            self.log(f"Executing command: {' '.join(command)}\n", "info")
+            self.log(f"Executing command: {' '.join(command)}\n", LogLevel.INFO)
             
             process = subprocess.Popen(
                 command,
@@ -1103,7 +1118,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -1115,7 +1130,7 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log("\n✓ Partition UUID changed successfully!\n", "success")
+                self.log("\n✓ Partition UUID changed successfully!\n", LogLevel.SUCCESS)
                 
                 # Show new partition info
                 try:
@@ -1124,26 +1139,26 @@ Please verify the information above is correct.
                         capture_output=True,
                         text=True
                     )
-                    self.log("New partition info:", "info")
-                    self.log(f"  {result.stdout.strip()}\n", "info")
+                    self.log("New partition info:", LogLevel.INFO)
+                    self.log(f"  {result.stdout.strip()}\n", LogLevel.INFO)
                 except Exception as e:
-                    self.log(f"Could not get new partition info: {str(e)}\n", "warning")
+                    self.log(f"Could not get new partition info: {str(e)}\n", LogLevel.WARNING)
                 
                 self.log("Note: If this is a boot partition, you may need to update:", "warning")
-                self.log("  - /etc/fstab entries", "warning")
-                self.log("  - GRUB configuration (run: sudo update-grub)", "warning")
-                self.log("  - Bootloader configuration\n", "warning")
+                self.log("  - /etc/fstab entries", LogLevel.WARNING)
+                self.log("  - GRUB configuration (run: sudo update-grub)", LogLevel.WARNING)
+                self.log("  - Bootloader configuration\n", LogLevel.WARNING)
             else:
-                self.log(f"\n✗ Failed to change partition UUID. Error code: {return_code}\n", "error")
+                self.log(f"\n✗ Failed to change partition UUID. Error code: {return_code}\n", LogLevel.ERROR)
                 
         except Exception as e:
-            self.log(f"\n✗ Error during UUID change: {str(e)}\n", "error")
+            self.log(f"\n✗ Error during UUID change: {str(e)}\n", LogLevel.ERROR)
     
     def execute_extension_script(self, script_path, script_name):
         """Execute extension script"""
-        self.log("\n" + "="*80, "info")
-        self.log(f"Execute Extension: {script_name}", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log(f"Execute Extension: {script_name}", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         # Show confirmation dialog
         reply = QMessageBox.question(
@@ -1155,10 +1170,10 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Operation cancelled.\n", "info")
+            self.log("Operation cancelled.\n", LogLevel.INFO)
             return
         
-        self.log(f"Executing: {script_path}\n", "warning")
+        self.log(f"Executing: {script_path}\n", LogLevel.WARNING)
         
         try:
             # Determine how to run the script
@@ -1167,7 +1182,7 @@ Please verify the information above is correct.
             elif script_path.endswith('.py'):
                 command = [sys.executable, script_path]
             else:
-                self.log(f"Error: Unsupported script type\n", "error")
+                self.log(f"Error: Unsupported script type\n", LogLevel.ERROR)
                 return
             
             process = subprocess.Popen(
@@ -1185,7 +1200,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -1197,37 +1212,37 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log(f"\n✓ Extension script executed successfully!\n", "success")
+                self.log(f"\n✓ Extension script executed successfully!\n", LogLevel.SUCCESS)
             else:
-                self.log(f"\n✗ Extension script failed with exit code: {return_code}\n", "error")
+                self.log(f"\n✗ Extension script failed with exit code: {return_code}\n", LogLevel.ERROR)
                 
         except Exception as e:
-            self.log(f"\n✗ Error executing extension script: {str(e)}\n", "error")
+            self.log(f"\n✗ Error executing extension script: {str(e)}\n", LogLevel.ERROR)
     
     def show_extensions_info(self):
         """Show extensions information"""
-        self.log("\n" + "="*80, "info")
-        self.log("Extensions Directory", "info")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Extensions Directory", LogLevel.INFO)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
-        self.log(f"Extensions path: {self.extensions_dir}", "info")
-        self.log("", "info")
+        self.log(f"Extensions path: {self.extensions_dir}", LogLevel.INFO)
+        self.log("", LogLevel.INFO)
         
         if not os.path.exists(self.extensions_dir):
-            self.log("Directory does not exist.", "warning")
-            self.log(f"Create it with: mkdir -p {self.extensions_dir}", "info")
-            self.log("", "info")
+            self.log("Directory does not exist.", LogLevel.WARNING)
+            self.log(f"Create it with: mkdir -p {self.extensions_dir}", LogLevel.INFO)
+            self.log("", LogLevel.INFO)
         
-        self.log("How to add extensions:", "info")
-        self.log("1. Place .sh (shell) or .py (Python) scripts in the extensions directory", "info")
-        self.log("2. Restart MiniTools to see your extensions", "info")
-        self.log("3. Click an extension button to execute it", "info")
-        self.log("", "info")
-        self.log("Supported file types:", "info")
-        self.log("  - .sh - Shell scripts (executed with bash)", "info")
-        self.log("  - .py - Python scripts (executed with python3)", "info")
-        self.log("", "info")
-        self.log("Scripts will be executed with your user permissions.\n", "warning")
+        self.log("How to add extensions:", LogLevel.INFO)
+        self.log("1. Place .sh (shell) or .py (Python) scripts in the extensions directory", LogLevel.INFO)
+        self.log("2. Restart MiniTools to see your extensions", LogLevel.INFO)
+        self.log("3. Click an extension button to execute it", LogLevel.INFO)
+        self.log("", LogLevel.INFO)
+        self.log("Supported file types:", LogLevel.INFO)
+        self.log("  - .sh - Shell scripts (executed with bash)", LogLevel.INFO)
+        self.log("  - .py - Python scripts (executed with python3)", LogLevel.INFO)
+        self.log("", LogLevel.INFO)
+        self.log("Scripts will be executed with your user permissions.\n", LogLevel.WARNING)
     
     def zoom_in_log(self):
         """Increase log font size"""
@@ -2309,7 +2324,7 @@ Please verify the information above is correct.
                         script_name = item  # Keep the full filename including extension
                         self.extension_scripts.append((script_name, item_path))
             except Exception as e:
-                self.log(f"Error scanning extensions directory: {str(e)}", "warning")
+                self.log(f"Error scanning extensions directory: {str(e)}", LogLevel.WARNING)
         
         if self.extension_scripts:
             extension_buttons = []
@@ -2401,7 +2416,7 @@ Please verify the information above is correct.
     
     def show_cpu_info(self):
         """Show CPU information"""
-        self.log("Fetching CPU information...", "info")
+        self.log("Fetching CPU information...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("cpu")
         self.info_worker.data_ready.connect(self._display_info)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2409,7 +2424,7 @@ Please verify the information above is correct.
     
     def show_memory_info(self):
         """Show memory information"""
-        self.log("Fetching memory information...", "info")
+        self.log("Fetching memory information...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("memory")
         self.info_worker.data_ready.connect(self._display_info)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2417,7 +2432,7 @@ Please verify the information above is correct.
     
     def show_kernel_info(self):
         """Show kernel information"""
-        self.log("Fetching kernel information...", "info")
+        self.log("Fetching kernel information...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("kernel")
         self.info_worker.data_ready.connect(self._display_info)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2425,7 +2440,7 @@ Please verify the information above is correct.
     
     def show_swap_info(self):
         """Show swap information"""
-        self.log("Fetching swap information...", "info")
+        self.log("Fetching swap information...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("swap")
         self.info_worker.data_ready.connect(self._display_info)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2433,7 +2448,7 @@ Please verify the information above is correct.
     
     def show_disk_info(self):
         """Show disk information"""
-        self.log("Fetching disk information...", "info")
+        self.log("Fetching disk information...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("disk")
         self.info_worker.data_ready.connect(self._display_info)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2441,7 +2456,7 @@ Please verify the information above is correct.
     
     def show_update_info(self):
         """Show update information"""
-        self.log("Checking for software updates...", "info")
+        self.log("Checking for software updates...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("update")
         self.info_worker.data_ready.connect(self._display_info_with_update_option)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2449,7 +2464,7 @@ Please verify the information above is correct.
     
     def show_flatpak_update_info(self):
         """Show Flatpak update information"""
-        self.log("Checking for Flatpak updates...", "info")
+        self.log("Checking for Flatpak updates...", LogLevel.INFO)
         self.info_worker = SystemInfoWorker("flatpak")
         self.info_worker.data_ready.connect(self._display_info_with_flatpak_update_option)
         self.info_worker.error_signal.connect(self._display_error)
@@ -2461,9 +2476,9 @@ Please verify the information above is correct.
         
         # 检查是否有可用更新
         if "Upgradable packages:" in content or "Available patches:" in content or "Updates available" in content:
-            self.log("\n" + "="*80, "info")
-            self.log("发现可用更新!", "warning")
-            self.log("="*80 + "\n", "info")
+            self.log("\n" + "="*80, LogLevel.INFO)
+            self.log("发现可用更新!", LogLevel.WARNING)
+            self.log("="*80 + "\n", LogLevel.INFO)
             
             # 显示确认对话框
             reply = QMessageBox.question(
@@ -2475,10 +2490,10 @@ Please verify the information above is correct.
             )
             
             if reply == QMessageBox.StandardButton.Yes:
-                self.log("Executing system update...", "warning")
+                self.log("Executing system update...", LogLevel.WARNING)
                 self.execute_system_update()
             else:
-                self.log("Update operation cancelled.\n", "info")
+                self.log("Update operation cancelled.\n", LogLevel.INFO)
         else:
             self.log("\nSystem is up to date, no updates available.\n", "success")
     
@@ -2488,9 +2503,9 @@ Please verify the information above is correct.
         
         # 检查是否有可用Flatpak更新
         if "Available Flatpak updates:" in content:
-            self.log("\n" + "="*80, "info")
-            self.log("Flatpak updates are available!", "warning")
-            self.log("="*80 + "\n", "info")
+            self.log("\n" + "="*80, LogLevel.INFO)
+            self.log("Flatpak updates are available!", LogLevel.WARNING)
+            self.log("="*80 + "\n", LogLevel.INFO)
             
             # 显示确认对话框
             reply = QMessageBox.question(
@@ -2502,18 +2517,18 @@ Please verify the information above is correct.
             )
             
             if reply == QMessageBox.StandardButton.Yes:
-                self.log("Executing Flatpak update...", "warning")
+                self.log("Executing Flatpak update...", LogLevel.WARNING)
                 self.execute_flatpak_update()
             else:
-                self.log("Flatpak update operation cancelled.\n", "info")
+                self.log("Flatpak update operation cancelled.\n", LogLevel.INFO)
         else:
-            self.log("\nFlatpak applications are up to date.\n", "success")
+            self.log("\nFlatpak applications are up to date.\n", LogLevel.SUCCESS)
     
     def execute_flatpak_update(self):
         """Execute Flatpak update"""
         command = ["flatpak", "update", "-y"]
         
-        self.log(f"Executing command: {' '.join(command)}", "warning")
+        self.log(f"Executing command: {' '.join(command)}", LogLevel.WARNING)
         
         try:
             process = subprocess.Popen(
@@ -2525,7 +2540,7 @@ Please verify the information above is correct.
                 universal_newlines=True
             )
             
-            self.log("Starting Flatpak update, please wait...\n", "info")
+            self.log("Starting Flatpak update, please wait...\n", LogLevel.INFO)
             
             def read_output():
                 while True:
@@ -2533,7 +2548,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -2545,18 +2560,18 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log("\n✓ Flatpak update completed!\n", "success")
+                self.log("\n✓ Flatpak update completed!\n", LogLevel.SUCCESS)
             else:
                 self.log(f"\n✗ Flatpak update failed, error code: {return_code}\n", "error")
                     
         except Exception as e:
-            self.log(f"\n✗ Error during Flatpak update: {str(e)}\n", "error")
+            self.log(f"\n✗ Error during Flatpak update: {str(e)}\n", LogLevel.ERROR)
     
     def remove_unused_flatpak(self):
         """Remove unused Flatpak runtimes"""
-        self.log("\n" + "="*80, "info")
-        self.log("Removing unused Flatpak runtimes", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Removing unused Flatpak runtimes", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         # 显示确认对话框
         reply = QMessageBox.question(
@@ -2568,12 +2583,12 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Operation cancelled.\n", "info")
+            self.log("Operation cancelled.\n", LogLevel.INFO)
             return
         
         command = ["flatpak", "uninstall", "--unused", "-y"]
         
-        self.log(f"Executing command: {' '.join(command)}", "warning")
+        self.log(f"Executing command: {' '.join(command)}", LogLevel.WARNING)
         
         try:
             process = subprocess.Popen(
@@ -2585,7 +2600,7 @@ Please verify the information above is correct.
                 universal_newlines=True
             )
             
-            self.log("Removing unused runtimes, please wait...\n", "info")
+            self.log("Removing unused runtimes, please wait...\n", LogLevel.INFO)
             
             def read_output():
                 while True:
@@ -2593,7 +2608,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -2605,18 +2620,18 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log("\n✓ Unused Flatpak runtimes removed successfully!\n", "success")
+                self.log("\n✓ Unused Flatpak runtimes removed successfully!\n", LogLevel.SUCCESS)
             else:
                 self.log(f"\n✗ Operation failed, error code: {return_code}\n", "error")
                     
         except Exception as e:
-            self.log(f"\n✗ Error during operation: {str(e)}\n", "error")
+            self.log(f"\n✗ Error during operation: {str(e)}\n", LogLevel.ERROR)
     
     def install_package_from_file(self):
         """Install package from file (.deb, .rpm, .pkg.tar.xz)"""
-        self.log("\n" + "="*80, "info")
-        self.log("Install Package from File", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Install Package from File", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         # 打开文件选择对话框
         file_path, _ = QFileDialog.getOpenFileName(
@@ -2627,10 +2642,10 @@ Please verify the information above is correct.
         )
         
         if not file_path:
-            self.log("No file selected. Operation cancelled.\n", "info")
+            self.log("No file selected. Operation cancelled.\n", LogLevel.INFO)
             return
         
-        self.log(f"Selected file: {file_path}\n", "info")
+        self.log(f"Selected file: {file_path}\n", LogLevel.INFO)
         
         # 检测包类型并构建安装命令
         file_ext = Path(file_path).suffix.lower()
@@ -2643,7 +2658,7 @@ Please verify the information above is correct.
                 command = ["pkexec", "dpkg", "-i", file_path]
                 command_fix = ["pkexec", "apt-get", "install", "-f"]
             else:
-                self.log(f"Warning: .deb packages are for Debian-based systems only.\n", "warning")
+                self.log(f"Warning: .deb packages are for Debian-based systems only.\n", LogLevel.WARNING)
                 reply = QMessageBox.question(
                     self,
                     "Continue Anyway?",
@@ -2655,14 +2670,14 @@ Please verify the information above is correct.
                     command = ["pkexec", "dpkg", "-i", file_path]
                     command_fix = ["pkexec", "apt-get", "install", "-f"]
                 else:
-                    self.log("Operation cancelled.\n", "info")
+                    self.log("Operation cancelled.\n", LogLevel.INFO)
                     return
         
         elif file_ext == '.rpm':
             if distro in ["fedora", "nobara", "rhel", "centos", "almalinux", "rocky", "opensuse-leap", "opensuse-tumbleweed", "sle"]:
                 command = ["pkexec", "rpm", "-i", file_path]
             else:
-                self.log(f"Warning: .rpm packages are for RPM-based systems only.\n", "warning")
+                self.log(f"Warning: .rpm packages are for RPM-based systems only.\n", LogLevel.WARNING)
                 reply = QMessageBox.question(
                     self,
                     "Continue Anyway?",
@@ -2673,14 +2688,14 @@ Please verify the information above is correct.
                 if reply == QMessageBox.StandardButton.Yes:
                     command = ["pkexec", "rpm", "-i", file_path]
                 else:
-                    self.log("Operation cancelled.\n", "info")
+                    self.log("Operation cancelled.\n", LogLevel.INFO)
                     return
         
         elif file_ext in ['.pkg.tar.xst', '.pkg.tar.xz']:
             if distro in ["arch", "cachyos", "manjaro", "endeavouros", "xerolinux", "garuda"]:
                 command = ["pkexec", "pacman", "-U", "--noconfirm", file_path]
             else:
-                self.log(f"Warning: Arch packages are for Arch-based systems only.\n", "warning")
+                self.log(f"Warning: Arch packages are for Arch-based systems only.\n", LogLevel.WARNING)
                 reply = QMessageBox.question(
                     self,
                     "Continue Anyway?",
@@ -2691,16 +2706,16 @@ Please verify the information above is correct.
                 if reply == QMessageBox.StandardButton.Yes:
                     command = ["pkexec", "pacman", "-U", "--noconfirm", file_path]
                 else:
-                    self.log("Operation cancelled.\n", "info")
+                    self.log("Operation cancelled.\n", LogLevel.INFO)
                     return
         
         else:
-            self.log(f"Error: Unsupported package format: {file_ext}\n", "error")
-            self.log("Supported formats: .deb, .rpm, .pkg.tar.xz, .pkg.tar.zst\n", "info")
+            self.log(f"Error: Unsupported package format: {file_ext}\n", LogLevel.ERROR)
+            self.log("Supported formats: .deb, .rpm, .pkg.tar.xz, .pkg.tar.zst\n", LogLevel.INFO)
             return
         
         if not command:
-            self.log("No installation command generated.\n", "error")
+            self.log("No installation command generated.\n", LogLevel.ERROR)
             return
         
         # 显示确认对话框
@@ -2713,11 +2728,11 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Installation cancelled.\n", "info")
+            self.log("Installation cancelled.\n", LogLevel.INFO)
             return
         
         # 执行安装
-        self.log(f"Executing: {' '.join(command)}\n", "warning")
+        self.log(f"Executing: {' '.join(command)}\n", LogLevel.WARNING)
         
         try:
             process = subprocess.Popen(
@@ -2729,7 +2744,7 @@ Please verify the information above is correct.
                 universal_newlines=True
             )
             
-            self.log("Installing package, please wait...\n", "info")
+            self.log("Installing package, please wait...\n", LogLevel.INFO)
             
             def read_output():
                 while True:
@@ -2737,7 +2752,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -2749,11 +2764,11 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log("\n✓ Package installed successfully!\n", "success")
+                self.log("\n✓ Package installed successfully!\n", LogLevel.SUCCESS)
                 
                 # 如果是deb包，尝试修复依赖
                 if file_ext == '.deb' and 'command_fix' in locals():
-                    self.log("Checking and fixing dependencies...\n", "info")
+                    self.log("Checking and fixing dependencies...\n", LogLevel.INFO)
                     process_fix = subprocess.Popen(
                         command_fix,
                         stdout=subprocess.PIPE,
@@ -2769,7 +2784,7 @@ Please verify the information above is correct.
                             if output == '' and process_fix.poll() is not None:
                                 break
                             if output:
-                                self.log(output.strip(), "info")
+                                self.log(output.strip(), LogLevel.INFO)
                                 QApplication.processEvents()
                     
                     fix_thread = threading.Thread(target=read_fix_output)
@@ -2780,14 +2795,14 @@ Please verify the information above is correct.
                     fix_thread.join(timeout=2)
                     
                     if fix_return_code == 0:
-                        self.log("\n✓ Dependencies fixed successfully!\n", "success")
+                        self.log("\n✓ Dependencies fixed successfully!\n", LogLevel.SUCCESS)
                     else:
-                        self.log(f"\n⚠ Dependency check completed with warnings.\n", "warning")
+                        self.log(f"\n⚠ Dependency check completed with warnings.\n", LogLevel.WARNING)
             else:
                 self.log(f"\n✗ Installation failed, error code: {return_code}\n", "error")
                     
         except Exception as e:
-            self.log(f"\n✗ Error during installation: {str(e)}\n", "error")
+            self.log(f"\n✗ Error during installation: {str(e)}\n", LogLevel.ERROR)
     
     def execute_system_update(self):
         """Execute system update based on distribution"""
@@ -2803,12 +2818,12 @@ Please verify the information above is correct.
         elif distro in ["opensuse-leap", "opensuse-tumbleweed", "sle"]:
             command = ["pkexec", "sh", "-c", "zypper dup -y"]
         else:
-            self.log("不支持的发行版，请手动更新。", "error")
+            self.log("不支持的发行版，请手动更新。", LogLevel.ERROR)
             return
         
         # 启动更新进程
-        self.log(f"正在执行命令: {' '.join(command)}", "warning")
-        self.log("注意: 更新过程会在新的终端窗口中进行\n", "info")
+        self.log(f"正在执行命令: {' '.join(command)}", LogLevel.WARNING)
+        self.log("注意: 更新过程会在新的终端窗口中进行\n", LogLevel.INFO)
         
         try:
             # 使用QProcess来处理pkexec，并等待完成
@@ -2822,7 +2837,7 @@ Please verify the information above is correct.
             )
             
             # 实时读取输出
-            self.log("开始更新，请稍候...\n", "info")
+            self.log("开始更新，请稍候...\n", LogLevel.INFO)
             
             # 创建一个线程来读取输出
             def read_output():
@@ -2831,7 +2846,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         # 强制UI更新
                         QApplication.processEvents()
             
@@ -2845,12 +2860,12 @@ Please verify the information above is correct.
             output_thread.join(timeout=2)
             
             if return_code == 0:
-                self.log("\n✓ 系统更新完成!\n", "success")
+                self.log("\n✓ 系统更新完成!\n", LogLevel.SUCCESS)
             else:
-                self.log(f"\n✗ 更新失败，错误码: {return_code}\n", "error")
+                self.log(f"\n✗ 更新失败，错误码: {return_code}\n", LogLevel.ERROR)
                     
         except Exception as e:
-            self.log(f"\n✗ 更新过程中出现错误: {str(e)}\n", "error")
+            self.log(f"\n✗ 更新过程中出现错误: {str(e)}\n", LogLevel.ERROR)
     
     def _detect_distro(self):
         """Detect the Linux distribution"""
@@ -2869,9 +2884,9 @@ Please verify the information above is correct.
     
     def _display_info(self, title, content):
         """Display the information in the log"""
-        self.log(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info")
-        self.log(f"{title}", "success")
-        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "info")
+        self.log(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
+        self.log(f"{title}", LogLevel.SUCCESS)
+        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
         
         # 将内容按行分割，为不同类型的信息添加颜色
         lines = content.split('\n')
@@ -2882,28 +2897,28 @@ Please verify the information above is correct.
             
             # 根据内容类型设置颜色
             if line.startswith("Error:") or line.startswith("✗"):
-                self.log(line, "error")
+                self.log(line, LogLevel.ERROR)
             elif line.startswith("Warning:") or line.startswith("⚠"):
-                self.log(line, "warning")
+                self.log(line, LogLevel.WARNING)
             elif line.startswith("✓") or "Installed" in line or "Available" in line:
-                self.log(line, "success")
+                self.log(line, LogLevel.SUCCESS)
             else:
-                self.log(line, "info")
+                self.log(line, LogLevel.INFO)
         
-        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "info")
+        self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
         
         # 自动滚动到底部
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
     
     def _display_error(self, error_message):
         """Display error message"""
-        self.log(f"\n{error_message}\n", "error")
+        self.log(f"\n{error_message}\n", LogLevel.ERROR)
     
     def install_iflow_cli(self):
         """Install iFlow CLI from official repository"""
-        self.log("\n" + "="*80, "info")
-        self.log("Install iFlow CLI", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Install iFlow CLI", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         # 显示确认对话框
         reply = QMessageBox.question(
@@ -2915,10 +2930,10 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Installation cancelled.\n", "info")
+            self.log("Installation cancelled.\n", LogLevel.INFO)
             return
         
-        self.log("Downloading iFlow CLI installer...", "info")
+        self.log("Downloading iFlow CLI installer...", LogLevel.INFO)
         
         install_script_url = "https://gitee.com/iflow-ai/iflow-cli/raw/main/install.sh"
         temp_dir = tempfile.mkdtemp()
@@ -2928,13 +2943,13 @@ Please verify the information above is correct.
             # Download install script
             import urllib.request
             urllib.request.urlretrieve(install_script_url, install_script_path)
-            self.log("Download completed successfully.\n", "success")
+            self.log("Download completed successfully.\n", LogLevel.SUCCESS)
             
             # Make script executable
             os.chmod(install_script_path, 0o755)
             
             # Run install script
-            self.log("Running iFlow CLI installer...\n", "warning")
+            self.log("Running iFlow CLI installer...\n", LogLevel.WARNING)
             
             process = subprocess.Popen(
                 ["bash", install_script_path],
@@ -2951,7 +2966,7 @@ Please verify the information above is correct.
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        self.log(output.strip(), "info")
+                        self.log(output.strip(), LogLevel.INFO)
                         QApplication.processEvents()
             
             import threading
@@ -2967,13 +2982,13 @@ Please verify the information above is correct.
             shutil.rmtree(temp_dir)
             
             if return_code == 0:
-                self.log("\n✓ iFlow CLI installed successfully!\n", "success")
-                self.log("You can now use 'iflow' command in your terminal.\n", "info")
+                self.log("\n✓ iFlow CLI installed successfully!\n", LogLevel.SUCCESS)
+                self.log("You can now use 'iflow' command in your terminal.\n", LogLevel.INFO)
             else:
                 self.log(f"\n✗ Installation failed, error code: {return_code}\n", "error")
                 
         except Exception as e:
-            self.log(f"\n✗ Error during installation: {str(e)}\n", "error")
+            self.log(f"\n✗ Error during installation: {str(e)}\n", LogLevel.ERROR)
             # Cleanup on error
             import shutil
             if os.path.exists(temp_dir):
@@ -2981,14 +2996,14 @@ Please verify the information above is correct.
     
     def clear_iflow_history(self):
         """Clear iFlow CLI command history"""
-        self.log("\n" + "="*80, "info")
-        self.log("Clear iFlow History", "warning")
-        self.log("="*80 + "\n", "info")
+        self.log("\n" + "="*80, LogLevel.INFO)
+        self.log("Clear iFlow History", LogLevel.WARNING)
+        self.log("="*80 + "\n", LogLevel.INFO)
         
         iflow_history_dir = os.path.expanduser("~/.iflow/history")
         
         if not os.path.exists(iflow_history_dir):
-            self.log("iFlow history directory does not exist.\n", "warning")
+            self.log("iFlow history directory does not exist.\n", LogLevel.WARNING)
             return
         
         # List files to be deleted
@@ -2999,18 +3014,18 @@ Please verify the information above is correct.
                 if os.path.isfile(item_path):
                     history_files.append(item)
         except Exception as e:
-            self.log(f"Error listing history files: {str(e)}\n", "error")
+            self.log(f"Error listing history files: {str(e)}\n", LogLevel.ERROR)
             return
         
         if not history_files:
-            self.log("No history files found.\n", "info")
+            self.log("No history files found.\n", LogLevel.INFO)
             return
         
-        self.log(f"Found {len(history_files)} history file(s):\n", "info")
+        self.log(f"Found {len(history_files)} history file(s):\n", LogLevel.INFO)
         for file in history_files[:10]:
-            self.log(f"  - {file}", "info")
+            self.log(f"  - {file}", LogLevel.INFO)
         if len(history_files) > 10:
-            self.log(f"  ... and {len(history_files) - 10} more files", "info")
+            self.log(f"  ... and {len(history_files) - 10} more files", LogLevel.INFO)
         self.log("")
         
         # Show confirmation dialog
@@ -3023,7 +3038,7 @@ Please verify the information above is correct.
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.log("Operation cancelled.\n", "info")
+            self.log("Operation cancelled.\n", LogLevel.INFO)
             return
         
         # Delete history files
@@ -3036,19 +3051,19 @@ Please verify the information above is correct.
                 try:
                     os.remove(item_path)
                     deleted_count += 1
-                    self.log(f"Deleted: {item}", "success")
+                    self.log(f"Deleted: {item}", LogLevel.SUCCESS)
                 except Exception as e:
                     errors.append(f"{item}: {str(e)}")
-                    self.log(f"Error deleting {item}: {str(e)}", "error")
+                    self.log(f"Error deleting {item}: {str(e)}", LogLevel.ERROR)
         except Exception as e:
-            self.log(f"Error clearing history: {str(e)}\n", "error")
+            self.log(f"Error clearing history: {str(e)}\n", LogLevel.ERROR)
             return
         
         self.log("")
         if deleted_count > 0:
-            self.log(f"✓ Successfully deleted {deleted_count} history file(s).\n", "success")
+            self.log(f"✓ Successfully deleted {deleted_count} history file(s).\n", LogLevel.SUCCESS)
         if errors:
-            self.log(f"✗ Failed to delete {len(errors)} file(s).\n", "error")
+            self.log(f"✗ Failed to delete {len(errors)} file(s).\n", LogLevel.ERROR)
 
 
 def main():
