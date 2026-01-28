@@ -9,7 +9,7 @@ set -e
 # ============================================================================
 
 # Get script directory (absolute path)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
 # Color definitions
@@ -36,10 +36,22 @@ APP_ICON_PATH="${PROJECT_ROOT}/${APP_ICON}"
 # Architecture detection
 ARCH=$(uname -m)
 case "$ARCH" in
-    x86_64) ARCH_SUFFIX="amd64" ;;
-    aarch64) ARCH_SUFFIX="aarch64" ;;
-    arm64) ARCH_SUFFIX="aarch64" ;;
-    *) ARCH_SUFFIX="$ARCH" ;;
+    x86_64) 
+        ARCH_SUFFIX="amd64"
+        RPM_ARCH="x86_64"
+        ;;
+    aarch64) 
+        ARCH_SUFFIX="aarch64"
+        RPM_ARCH="x86_64"
+        ;;
+    arm64) 
+        ARCH_SUFFIX="aarch64"
+        RPM_ARCH="x86_64"
+        ;;
+    *) 
+        ARCH_SUFFIX="$ARCH"
+        RPM_ARCH="$ARCH"
+        ;;
 esac
 
 # Package naming format: {pkg}-{version}-{arch}.{ext}
@@ -447,8 +459,8 @@ if [ "$BUILD_RPM" = "true" ]; then
         RPM_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.rpm"
         
         # Create rpmbuild directory structure
-        mkdir -p "${BUILD_DIR}/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}"
-        RPM_RPMS_DIR="${BUILD_DIR}/rpmbuild/RPMS/x86_64"
+        mkdir -p "${BUILD_DIR}/rpmbuild/BUILD" "${BUILD_DIR}/rpmbuild/RPMS" "${BUILD_DIR}/rpmbuild/SOURCES" "${BUILD_DIR}/rpmbuild/SPECS" "${BUILD_DIR}/rpmbuild/SRPMS"
+        RPM_RPMS_DIR="${BUILD_DIR}/rpmbuild/RPMS/${RPM_ARCH}"
         
         # Create spec file
         cat > "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" << EOF
@@ -462,6 +474,8 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  python3-devel, python3-pyqt6-devel
 Requires:       python3, python3-pyqt6
+
+%global debug_package %{nil}
 
 %description
 MiniTools is a modern GUI application for system information
@@ -515,15 +529,17 @@ EOF
         tar -czf "${BUILD_DIR}/rpmbuild/SOURCES/${APP_PKG_NAME}-${VERSION}.tar.gz" -C "${BUILD_DIR}" "${APP_PKG_NAME}-${VERSION}"
         
         # Build RPM
-        rpmbuild -ba "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" --define "_topdir $(pwd)/${BUILD_DIR}/rpmbuild" 2>&1
+        rpmbuild_topdir="${BUILD_DIR}/rpmbuild"
+        rpmbuild -ba "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" --define "_topdir ${rpmbuild_topdir}" 2>&1
         
-        # Find and copy the built RPM
-        RPM_FILE="${RPM_RPMS_DIR}/${APP_PKG_NAME}-${VERSION}-1.${ARCH_SUFFIX}.rpm"
-        if [ -f "$RPM_FILE" ]; then
+        # Find and copy the built RPM (file may include dist info like .fc43)
+        RPM_FILE=$(find "${RPM_RPMS_DIR}" -name "${APP_PKG_NAME}-${VERSION}-1.*.${RPM_ARCH}.rpm" 2>/dev/null | head -1)
+        if [ -n "$RPM_FILE" ] && [ -f "$RPM_FILE" ]; then
             cp "$RPM_FILE" "$RPM_OUTPUT"
             print_success "✓ RPM package created: $RPM_OUTPUT"
         else
             print_error "✗ RPM package build failed"
+            print_info "  Looking for: ${APP_PKG_NAME}-${VERSION}-1.*.${RPM_ARCH}.rpm in ${RPM_RPMS_DIR}"
         fi
     fi
 fi
