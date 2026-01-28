@@ -36,8 +36,8 @@ echo ""
 
 # Get version from script or use default
 VERSION="1.0.0"
-if [ -f "MiniTools.py" ]; then
-    VERSION=$(grep "__version__" MiniTools.py 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
+if [ -f "../MiniTools.py" ]; then
+    VERSION=$(grep "__version__" ../MiniTools.py 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
 fi
 
 echo -e "${GREEN}Building MiniTools version: $VERSION${NC}"
@@ -48,13 +48,65 @@ BUILD_DIR="build"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Clean previous builds
-rm -rf *.deb *.rpm *.AppImage *.tar.gz minitools_* MiniTools.AppDir
+# Note: Previous builds are not automatically cleaned to allow multiple formats
+# To clean, run: rm -rf build/*.deb build/*.rpm build/*.AppImage build/minitools_* build/MiniTools.AppDir
+
+# ============================================================================
+# Interactive Menu for Build Format Selection
+# ============================================================================
+echo -e "${CYAN}==========================================${NC}"
+echo -e "${GREEN}  Select Build Format${NC}"
+echo -e "${CYAN}==========================================${NC}"
+echo ""
+echo "1) DEB Package (Debian/Ubuntu)"
+echo "2) RPM Package (Fedora/RHEL)"
+echo "3) AppImage (Universal)"
+echo "4) All formats"
+echo "0) Exit"
+echo ""
+read -p "Enter your choice [0-4]: " choice
+
+BUILD_DEB="false"
+BUILD_RPM="false"
+BUILD_APPIMAGE="false"
+
+case $choice in
+    1)
+        BUILD_DEB="true"
+        ;;
+    2)
+        BUILD_RPM="true"
+        ;;
+    3)
+        BUILD_APPIMAGE="true"
+        ;;
+    4)
+        BUILD_DEB="true"
+        BUILD_RPM="true"
+        BUILD_APPIMAGE="true"
+        ;;
+    0)
+        echo -e "${YELLOW}Build cancelled${NC}"
+        exit 0
+        ;;
+    *)
+        echo -e "${RED}Invalid choice${NC}"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo -e "${BLUE}Building formats: ${NC}"
+[ "$BUILD_DEB" = "true" ] && echo -e "  ${GREEN}✓ DEB${NC}"
+[ "$BUILD_RPM" = "true" ] && echo -e "  ${GREEN}✓ RPM${NC}"
+[ "$BUILD_APPIMAGE" = "true" ] && echo -e "  ${GREEN}✓ AppImage${NC}"
+echo ""
 
 # ============================================================================
 # Build DEB Package (Debian/Ubuntu based)
 # ============================================================================
-echo -e "${BLUE}Checking DEB build capability...${NC}"
+if [ "$BUILD_DEB" = "true" ]; then
+    echo -e "${BLUE}Checking DEB build capability...${NC}"
 
 CAN_BUILD_DEB="false"
 if command -v dpkg-deb >/dev/null 2>&1; then
@@ -78,6 +130,14 @@ if [ "$CAN_BUILD_DEB" = "true" ]; then
     # Copy application files
     cp ../MiniTools.py "$DEB_DIR/opt/minitools/"
     chmod +x "$DEB_DIR/opt/minitools/MiniTools.py"
+    
+    # Copy icon if available
+    if [ -f "../minitools.png" ]; then
+        cp ../minitools.png "$DEB_DIR/usr/share/pixmaps/"
+        echo -e "${GREEN}✓ Icon copied${NC}"
+    else
+        echo -e "${YELLOW}⚠ Icon not found (minitools.png), skipping...${NC}"
+    fi
     
     # Create launcher script
     cat > "$DEB_DIR/usr/bin/minitools" << 'EOF'
@@ -125,23 +185,25 @@ EOF
         echo -e "${RED}✗ DEB package build failed${NC}"
     fi
 fi
+fi
 
 # ============================================================================
 # Build RPM Package (RHEL/Fedora based)
 # ============================================================================
-echo ""
-echo -e "${BLUE}Checking RPM build capability...${NC}"
+if [ "$BUILD_RPM" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}Checking RPM build capability...${NC}"
 
-CAN_BUILD_RPM="false"
-if command -v rpmbuild >/dev/null 2>&1; then
-    CAN_BUILD_RPM="true"
-    echo -e "${GREEN}✓ rpmbuild found${NC}"
-else
-    echo -e "${RED}✗ rpmbuild not found - skipping RPM build${NC}"
-    echo -e "  Install with: sudo dnf install rpm-build${NC}"
-fi
+    CAN_BUILD_RPM="false"
+    if command -v rpmbuild >/dev/null 2>&1; then
+        CAN_BUILD_RPM="true"
+        echo -e "${GREEN}✓ rpmbuild found${NC}"
+    else
+        echo -e "${RED}✗ rpmbuild not found - skipping RPM build${NC}"
+        echo -e "  Install with: sudo dnf install rpm-build${NC}"
+    fi
 
-if [ "$CAN_BUILD_RPM" = "true" ]; then
+    if [ "$CAN_BUILD_RPM" = "true" ]; then
     echo -e "${BLUE}Building RPM package...${NC}"
     
     # Create rpmbuild directory structure
@@ -221,25 +283,30 @@ EOF
     else
         echo -e "${RED}✗ RPM package build failed${NC}"
     fi
+    fi
 fi
 
 # ============================================================================
 # Build AppImage
 # ============================================================================
-echo ""
-echo -e "${BLUE}Checking AppImage build capability...${NC}"
+if [ "$BUILD_APPIMAGE" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}Checking AppImage build capability...${NC}"
 
-CAN_BUILD_APPIMAGE="false"
-if command -v wget >/dev/null 2>&1; then
-    CAN_BUILD_APPIMAGE="true"
-    echo -e "${GREEN}✓ wget found${NC}"
-else
-    echo -e "${RED}✗ wget not found - skipping AppImage build${NC}"
-    echo -e "  Install with: sudo apt install wget  # or dnf install wget${NC}"
-fi
+    CAN_BUILD_APPIMAGE="false"
+    if command -v wget >/dev/null 2>&1; then
+        CAN_BUILD_APPIMAGE="true"
+        echo -e "${GREEN}✓ wget found${NC}"
+    else
+        echo -e "${RED}✗ wget not found - skipping AppImage build${NC}"
+        echo -e "  Install with: sudo apt install wget  # or dnf install wget${NC}"
+    fi
 
-if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then
+    if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then
     echo -e "${BLUE}Building AppImage package...${NC}"
+    echo -e "${YELLOW}Note: This AppImage requires Python3 to be installed on the target system.${NC}"
+    echo -e "${YELLOW}For a self-contained AppImage with Python, use tools like 'linuxdeploy' or 'pyapp'.${NC}"
+    echo ""
     
     APPDIR="MiniTools.AppDir"
     mkdir -p "$APPDIR/usr/bin"
@@ -250,17 +317,29 @@ if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then
     cp ../MiniTools.py "$APPDIR/usr/bin/minitools"
     chmod +x "$APPDIR/usr/bin/minitools"
     
+    # Copy icon if available
+    if [ -f "../minitools.png" ]; then
+        # Copy to AppDir root (required by appimagetool)
+        cp ../minitools.png "$APPDIR/minitools.png"
+        # Also copy to system icons directory
+        cp ../minitools.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/minitools.png"
+        echo -e "${GREEN}✓ Icon copied for AppImage${NC}"
+    else
+        echo -e "${YELLOW}⚠ Icon not found (minitools.png), skipping...${NC}"
+    fi
+    
     # Create AppRun
     cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
+
+# Use system Python3, not AppImage internal path
 export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
 export PYTHONPATH="${HERE}/usr/lib/python3/site-packages:${PYTHONPATH}"
 
 cd "${HERE}"
-exec "${HERE}/usr/bin/python3" "${HERE}/usr/bin/minitools" "$@"
+exec python3 "${HERE}/usr/bin/minitools" "$@"
 EOF
     chmod +x "$APPDIR/AppRun"
     
@@ -281,10 +360,57 @@ EOF
     
     # Download appimagetool
     APPIMAGETOOL="appimagetool-x86_64.AppImage"
-    if [ ! -f "$APPIMAGETOOL" ]; then
+    APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/$APPIMAGETOOL"
+    
+    echo ""
+    echo -e "${CYAN}==========================================${NC}"
+    echo -e "${CYAN}  appimagetool Check${NC}"
+    echo -e "${CYAN}==========================================${NC}"
+    echo -e "${BLUE}Working directory: $(pwd)${NC}"
+    echo -e "${BLUE}Looking for: $APPIMAGETOOL${NC}"
+    
+    # List all AppImage files in current directory
+    if ls *.AppImage 2>/dev/null; then
+        echo -e "${GREEN}Found AppImage files:${NC}"
+        ls -lh *.AppImage
+    else
+        echo -e "${YELLOW}No AppImage files found in current directory${NC}"
+    fi
+    echo -e "${CYAN}==========================================${NC}"
+    echo ""
+    
+    NEED_DOWNLOAD=true
+    
+    if [ -f "$APPIMAGETOOL" ]; then
+        echo -e "${GREEN}✓ appimagetool already exists${NC}"
+        echo -e "${YELLOW}File: $(pwd)/$APPIMAGETOOL${NC}"
+        echo -e "${YELLOW}Size: $(du -h "$APPIMAGETOOL" | cut -f1)${NC}"
+        echo ""
+        echo -e "${CYAN}Press Enter to use existing file, or type 'y' to re-download:${NC}"
+        read -p "Your choice (default: use existing): " redownload
+        echo ""
+        if [[ "$redownload" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Re-downloading appimagetool...${NC}"
+            rm -f "$APPIMAGETOOL"
+            NEED_DOWNLOAD=true
+        else
+            echo -e "${GREEN}Using existing file${NC}"
+            NEED_DOWNLOAD=false
+        fi
+    fi
+    
+    if [ "$NEED_DOWNLOAD" = true ]; then
         echo -e "${YELLOW}Downloading appimagetool...${NC}"
-        wget -q --show-progress "https://github.com/AppImage/AppImageKit/releases/download/continuous/$APPIMAGETOOL"
-        chmod +x "$APPIMAGETOOL"
+        echo -e "${BLUE}  Download URL: $APPIMAGETOOL_URL${NC}"
+        echo -e "${BLUE}  Save location: $(pwd)/$APPIMAGETOOL${NC}"
+        echo -e "${CYAN}  If download is too slow, you can download manually and place it here.${NC}"
+        wget --show-progress -O "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
+        if [ -f "$APPIMAGETOOL" ] && [ -s "$APPIMAGETOOL" ]; then
+            chmod +x "$APPIMAGETOOL"
+            echo -e "${GREEN}✓ Download completed${NC}"
+        else
+            echo -e "${RED}✗ Download failed${NC}"
+        fi
     fi
     
     # Build AppImage
@@ -298,6 +424,7 @@ EOF
         fi
     else
         echo -e "${RED}✗ appimagetool download failed${NC}"
+    fi
     fi
 fi
 
