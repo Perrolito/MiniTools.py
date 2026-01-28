@@ -4,6 +4,16 @@
 
 set -e
 
+# Get script directory (absolute path)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# PROJECT_ROOT is the directory containing build.sh and MiniTools.py
+# If build.sh is in the project root (e.g., /path/to/project/build.sh),
+# then SCRIPT_DIR == PROJECT_ROOT
+# If build.sh is in a subdirectory (e.g., /path/to/project/build/build.sh),
+# then PROJECT_ROOT is SCRIPT_DIR's parent
+PROJECT_ROOT="$SCRIPT_DIR"
+
 # Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -11,6 +21,36 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Application metadata
+APP_NAME="MiniTools"
+APP_PKG_NAME="minitools"
+APP_PYTHON_SCRIPT="MiniTools.py"
+APP_ICON="minitools.png"
+
+# Architecture detection
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)
+        ARCH_SUFFIX="amd64"
+        ;;
+    aarch64)
+        ARCH_SUFFIX="aarch64"
+        ;;
+    arm64)
+        ARCH_SUFFIX="aarch64"
+        ;;
+    *)
+        ARCH_SUFFIX="$ARCH"
+        ;;
+esac
+
+# Path definitions
+APP_SCRIPT_PATH="$PROJECT_ROOT/$APP_PYTHON_SCRIPT"
+APP_ICON_PATH="$PROJECT_ROOT/$APP_ICON"
+
+# Package naming format: {pkg}-{version}-{arch}.{ext}
+# AppImage format: {name}-{version}-{arch}.{type}.{ext}
 
 echo -e "${CYAN}==========================================${NC}"
 echo -e "${GREEN}  MiniTools Build Script${NC}"
@@ -36,11 +76,11 @@ echo ""
 
 # Get version from script or use default
 VERSION="1.0.0"
-if [ -f "MiniTools.py" ]; then
-    VERSION=$(grep "__version__" MiniTools.py 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
-    echo -e "${BLUE}Detected version from MiniTools.py: $VERSION${NC}"
+if [ -f "$APP_SCRIPT_PATH" ]; then
+    VERSION=$(grep "__version__" "$APP_SCRIPT_PATH" 2>/dev/null | head -1 | cut -d'"' -f2 || echo "1.0.0")
+    echo -e "${BLUE}Detected version from $APP_PYTHON_SCRIPT: $VERSION${NC}"
 else
-    echo -e "${YELLOW}MiniTools.py not found, using default version: $VERSION${NC}"
+    echo -e "${YELLOW}$APP_PYTHON_SCRIPT not found, using default version: $VERSION${NC}"
 fi
 
 echo -e "${GREEN}Building MiniTools version: $VERSION${NC}"
@@ -49,7 +89,9 @@ echo ""
 # Create build directory
 BUILD_DIR="build"
 mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+# Build directory (relative to script location)
+BUILD_DIR="$SCRIPT_DIR/build"
+mkdir -p "$BUILD_DIR"
 
 # Note: Previous builds are not automatically cleaned to allow multiple formats
 # To clean, run: rm -rf build/*.deb build/*.rpm build/*.AppImage build/minitools_* build/MiniTools.AppDir
@@ -63,15 +105,17 @@ echo -e "${CYAN}==========================================${NC}"
 echo ""
 echo "1) DEB Package (Debian/Ubuntu)"
 echo "2) RPM Package (Fedora/RHEL)"
-echo "3) AppImage (Universal)"
-echo "4) All formats"
+echo "3) AppImage (Universal, requires system Python3)"
+echo "4) AppImage (Self-contained, includes Python3)"
+echo "5) All formats"
 echo "0) Exit"
 echo ""
-read -p "Enter your choice [0-4]: " choice
+read -p "Enter your choice [0-5]: " choice
 
 BUILD_DEB="false"
 BUILD_RPM="false"
 BUILD_APPIMAGE="false"
+BUILD_APPIMAGE_BUNDLE="false"
 
 case $choice in
     1)
@@ -84,9 +128,13 @@ case $choice in
         BUILD_APPIMAGE="true"
         ;;
     4)
+        BUILD_APPIMAGE_BUNDLE="true"
+        ;;
+    5)
         BUILD_DEB="true"
         BUILD_RPM="true"
         BUILD_APPIMAGE="true"
+        BUILD_APPIMAGE_BUNDLE="true"
         ;;
     0)
         echo -e "${YELLOW}Build cancelled${NC}"
@@ -102,7 +150,8 @@ echo ""
 echo -e "${BLUE}Building formats: ${NC}"
 [ "$BUILD_DEB" = "true" ] && echo -e "  ${GREEN}✓ DEB${NC}"
 [ "$BUILD_RPM" = "true" ] && echo -e "  ${GREEN}✓ RPM${NC}"
-[ "$BUILD_APPIMAGE" = "true" ] && echo -e "  ${GREEN}✓ AppImage${NC}"
+[ "$BUILD_APPIMAGE" = "true" ] && echo -e "  ${GREEN}✓ AppImage (System Python)${NC}"
+[ "$BUILD_APPIMAGE_BUNDLE" = "true" ] && echo -e "  ${GREEN}✓ AppImage (Self-contained)${NC}"
 echo ""
 
 # ============================================================================
@@ -122,57 +171,69 @@ fi
 
 if [ "$CAN_BUILD_DEB" = "true" ]; then
     echo -e "${BLUE}Building DEB package...${NC}"
-    
-    DEB_DIR="minitools_${VERSION}_amd64"
+
+    # Unified package naming: minitools-1.0.2-amd64.deb
+    DEB_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.deb"
+    DEB_DIR="${BUILD_DIR}/${APP_PKG_NAME}_${VERSION}_${ARCH_SUFFIX}"
+    DEB_INSTALL_DIR="/opt/$APP_PKG_NAME"
+    DEB_BIN_DIR="/usr/bin/$APP_PKG_NAME"
+    DEB_DESKTOP_FILE="$APP_PKG_NAME.desktop"
+    DEB_ICON_FILE="$APP_PKG_NAME.png"
+
+    # Clean up previous build artifacts
+    echo -e "${YELLOW}Cleaning up previous DEB build artifacts...${NC}"
+    rm -rf "$DEB_DIR"
+    rm -f "$DEB_OUTPUT"
+
     mkdir -p "$DEB_DIR/DEBIAN"
-    mkdir -p "$DEB_DIR/opt/minitools"
+    mkdir -p "$DEB_DIR/$DEB_INSTALL_DIR"
     mkdir -p "$DEB_DIR/usr/share/applications"
     mkdir -p "$DEB_DIR/usr/share/pixmaps"
     mkdir -p "$DEB_DIR/usr/bin"
-    
+
     # Copy application files
-    cp ../MiniTools.py "$DEB_DIR/opt/minitools/"
-    chmod +x "$DEB_DIR/opt/minitools/MiniTools.py"
-    
+    cp "$APP_SCRIPT_PATH" "$DEB_DIR/$DEB_INSTALL_DIR/$APP_PYTHON_SCRIPT"
+    chmod +x "$DEB_DIR/$DEB_INSTALL_DIR/$APP_PYTHON_SCRIPT"
+
     # Copy icon if available
-    if [ -f "../minitools.png" ]; then
-        cp ../minitools.png "$DEB_DIR/usr/share/pixmaps/"
+    if [ -f "$APP_ICON_PATH" ]; then
+        cp "$APP_ICON_PATH" "$DEB_DIR/usr/share/pixmaps/$DEB_ICON_FILE"
         echo -e "${GREEN}✓ Icon copied${NC}"
     else
-        echo -e "${YELLOW}⚠ Icon not found (minitools.png), skipping...${NC}"
+        echo -e "${YELLOW}⚠ Icon not found ($APP_ICON), skipping...${NC}"
     fi
-    
+
     # Create launcher script
-    cat > "$DEB_DIR/usr/bin/minitools" << 'EOF'
+    cat > "$DEB_DIR/usr/bin/$APP_PKG_NAME" << EOF
 #!/bin/bash
-cd /opt/minitools
-python3 MiniTools.py "$@"
+cd $DEB_INSTALL_DIR
+python3 $APP_PYTHON_SCRIPT "\$@"
 EOF
-    chmod +x "$DEB_DIR/usr/bin/minitools"
-    
+    chmod +x "$DEB_DIR/usr/bin/$APP_PKG_NAME"
+
     # Create desktop entry
-    cat > "$DEB_DIR/usr/share/applications/minitools.desktop" << EOF
+    cat > "$DEB_DIR/usr/share/applications/$DEB_DESKTOP_FILE" << EOF
 [Desktop Entry]
-Name=MiniTools
+Name=$APP_NAME
 Comment=System Information and Maintenance Tools
-Exec=/usr/bin/minitools
-Icon=minitools
+Exec=$DEB_BIN_DIR
+Icon=$APP_PKG_NAME
 Terminal=false
 Type=Application
 Categories=System;Utility;
 Keywords=system;monitor;maintenance;
 EOF
-    
+
     # Create control file
     cat > "$DEB_DIR/DEBIAN/control" << EOF
-Package: minitools
+Package: $APP_PKG_NAME
 Version: ${VERSION}
-Architecture: amd64
+Architecture: ${ARCH_SUFFIX}
 Maintainer: MiniTools Team
 Installed-Size: 1024
 Section: utils
 Priority: optional
-Homepage: https://github.com/minitools
+Homepage: https://github.com/Perrolito/MiniTools.py/
 Description: System Information and Maintenance Tools
  MiniTools is a modern GUI application for system information
  display and maintenance. It provides tools for viewing CPU,
@@ -181,9 +242,9 @@ Depends: python3, python3-pyqt6
 EOF
     
     # Build DEB
-    dpkg-deb --build "$DEB_DIR" 2>&1
-    if [ -f "${DEB_DIR}.deb" ]; then
-        echo -e "${GREEN}✓ DEB package created: ${DEB_DIR}.deb${NC}"
+    dpkg-deb --build "$DEB_DIR" "$DEB_OUTPUT" 2>&1
+    if [ -f "$DEB_OUTPUT" ]; then
+        echo -e "${GREEN}✓ DEB package created: $DEB_OUTPUT${NC}"
     else
         echo -e "${RED}✗ DEB package build failed${NC}"
     fi
@@ -208,18 +269,29 @@ if [ "$BUILD_RPM" = "true" ]; then
 
     if [ "$CAN_BUILD_RPM" = "true" ]; then
     echo -e "${BLUE}Building RPM package...${NC}"
-    
+
+    # Unified package naming: minitools-1.0.2-amd64.rpm
+    RPM_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.rpm"
+    # Create rpmbuild directory structure
+    mkdir -p "${BUILD_DIR}/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}"
+    RPM_RPMS_DIR="${BUILD_DIR}/rpmbuild/RPMS/x86_64"
+
+    # Clean up previous build artifacts
+    echo -e "${YELLOW}Cleaning up previous RPM build artifacts...${NC}"
+    rm -rf rpmbuild
+    rm -f "$RPM_OUTPUT"
+
     # Create rpmbuild directory structure
     mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-    
+
     # Create spec file
-    cat > rpmbuild/SPECS/minitools.spec << EOF
-Name:           minitools
+    cat > "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" << EOF
+Name:           $APP_PKG_NAME
 Version:        ${VERSION}
 Release:        1%{?dist}
 Summary:        System Information and Maintenance Tools
 License:        MIT
-URL:            https://github.com/minitools
+URL:            https://github.com/Perrolito/MiniTools.py/
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  python3-devel, python3-pyqt6-devel
@@ -237,52 +309,53 @@ memory, disk information, managing software updates, and more.
 # No build needed for Python script
 
 %install
-mkdir -p %{buildroot}/opt/minitools
+mkdir -p %{buildroot}/opt/$APP_PKG_NAME
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/applications
 
-install -m 755 MiniTools.py %{buildroot}/opt/minitools/
+install -m 755 $APP_PYTHON_SCRIPT %{buildroot}/opt/$APP_PKG_NAME/
 
-cat > %{buildroot}/usr/bin/minitools << 'SCRIPT'
+cat > %{buildroot}/usr/bin/$APP_PKG_NAME << SCRIPT
 #!/bin/bash
-cd /opt/minitools
-python3 MiniTools.py "$@"
+cd /opt/$APP_PKG_NAME
+python3 $APP_PYTHON_SCRIPT "\$@"
 SCRIPT
-chmod 755 %{buildroot}/usr/bin/minitools
+chmod 755 %{buildroot}/usr/bin/$APP_PKG_NAME
 
-cat > %{buildroot}/usr/share/applications/minitools.desktop << 'DESKTOP'
+cat > %{buildroot}/usr/share/applications/$APP_PKG_NAME.desktop << 'DESKTOP'
 [Desktop Entry]
-Name=MiniTools
+Name=$APP_NAME
 Comment=System Information and Maintenance Tools
-Exec=/usr/bin/minitools
-Icon=minitools
+Exec=/usr/bin/$APP_PKG_NAME
+Icon=$APP_PKG_NAME
 Terminal=false
 Type=Application
 Categories=System;Utility;
 DESKTOP
 
 %files
-/opt/minitools/MiniTools.py
-/usr/bin/minitools
-/usr/share/applications/minitools.desktop
+/opt/$APP_PKG_NAME/$APP_PYTHON_SCRIPT
+/usr/bin/$APP_PKG_NAME
+/usr/share/applications/$APP_PKG_NAME.desktop
 
 %changelog
 * $(date +'%a %b %d %Y') MiniTools Team <team@minitools.com> - ${VERSION}-1
 - Initial package
 EOF
-    
+
     # Create source tarball
-    mkdir -p minitools-${VERSION}
-    cp ../MiniTools.py minitools-${VERSION}/
-    tar -czf rpmbuild/SOURCES/minitools-${VERSION}.tar.gz minitools-${VERSION}
-    
+    mkdir -p "${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}"
+    cp "$APP_SCRIPT_PATH" "${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}/"
+    tar -czf "${BUILD_DIR}/rpmbuild/SOURCES/${APP_PKG_NAME}-${VERSION}.tar.gz" -C "${BUILD_DIR}" "${APP_PKG_NAME}-${VERSION}"
+
     # Build RPM
-    rpmbuild -ba rpmbuild/SPECS/minitools.spec --define "_topdir $(pwd)/rpmbuild" 2>&1
-    
+    rpmbuild -ba "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" --define "_topdir $(pwd)/${BUILD_DIR}/rpmbuild" 2>&1
+
     # Find and copy the built RPM
-    if [ -f "rpmbuild/RPMS/x86_64/minitools-${VERSION}-1.x86_64.rpm" ]; then
-        cp rpmbuild/RPMS/x86_64/minitools-${VERSION}-1.x86_64.rpm ./
-        echo -e "${GREEN}✓ RPM package created: minitools-${VERSION}-1.x86_64.rpm${NC}"
+    RPM_FILE="${RPM_RPMS_DIR}/${APP_PKG_NAME}-${VERSION}-1.${ARCH_SUFFIX}.rpm"
+    if [ -f "$RPM_FILE" ]; then
+        cp "$RPM_FILE" "$RPM_OUTPUT"
+        echo -e "${GREEN}✓ RPM package created: $RPM_OUTPUT${NC}"
     else
         echo -e "${RED}✗ RPM package build failed${NC}"
     fi
@@ -310,59 +383,77 @@ if [ "$BUILD_APPIMAGE" = "true" ]; then
     echo -e "${YELLOW}Note: This AppImage requires Python3 to be installed on the target system.${NC}"
     echo -e "${YELLOW}For a self-contained AppImage with Python, use tools like 'linuxdeploy' or 'pyapp'.${NC}"
     echo ""
-    
-    APPDIR="MiniTools.AppDir"
+
+    # Unified package naming: MiniTools-1.0.2-amd64.AppImage
+    APPDIR="${BUILD_DIR}/${APP_NAME}.AppDir"
+    APPDESKTOP_FILE="${APP_PKG_NAME}.desktop"
+    APPIMAGE_OUTPUT="${BUILD_DIR}/${APP_NAME}-${VERSION}-${ARCH_SUFFIX}.AppImage"
+    # Keep original tool names (x86_64 is the actual tool name, not our package naming)
+    APPIMAGETOOL_NAME="appimagetool-x86_64.AppImage"
+    APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/$APPIMAGETOOL_NAME"
+
+    # Check for appimagetool in build directory or current directory
+    if [ -f "$BUILD_DIR/$APPIMAGETOOL_NAME" ]; then
+        APPIMAGETOOL="$BUILD_DIR/$APPIMAGETOOL_NAME"
+    elif [ -f "$APPIMAGETOOL_NAME" ]; then
+        APPIMAGETOOL="./$APPIMAGETOOL_NAME"
+    else
+        APPIMAGETOOL="$APPIMAGETOOL_NAME"
+    fi
+
+    # Clean up previous build artifacts
+    echo -e "${YELLOW}Cleaning up previous AppImage build artifacts...${NC}"
+    rm -rf "$APPDIR"
+    rm -f "$APPIMAGE_OUTPUT"
+
     mkdir -p "$APPDIR/usr/bin"
     mkdir -p "$APPDIR/usr/share/applications"
     mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-    
+
     # Copy application
-    cp ../MiniTools.py "$APPDIR/usr/bin/minitools"
-    chmod +x "$APPDIR/usr/bin/minitools"
-    
+    cp "$APP_SCRIPT_PATH" "$APPDIR/usr/bin/$APP_PKG_NAME"
+    chmod +x "$APPDIR/usr/bin/$APP_PKG_NAME"
+
     # Copy icon if available
-    if [ -f "../minitools.png" ]; then
+    if [ -f "$APP_ICON_PATH" ]; then
         # Copy to AppDir root (required by appimagetool)
-        cp ../minitools.png "$APPDIR/minitools.png"
+        cp "$APP_ICON_PATH" "$APPDIR/$APP_PKG_NAME.png"
         # Also copy to system icons directory
-        cp ../minitools.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/minitools.png"
+        cp "$APP_ICON_PATH" "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_PKG_NAME.png"
         echo -e "${GREEN}✓ Icon copied for AppImage${NC}"
     else
-        echo -e "${YELLOW}⚠ Icon not found (minitools.png), skipping...${NC}"
+        echo -e "${YELLOW}⚠ Icon not found ($APP_ICON), skipping...${NC}"
     fi
-    
+
     # Create AppRun
-    cat > "$APPDIR/AppRun" << 'EOF'
+    cat > "$APPDIR/AppRun" << EOF
 #!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
+SELF=\$(readlink -f "\$0")
+HERE=\${SELF%/*}
 
 # Use system Python3, not AppImage internal path
-export PATH="${HERE}/usr/bin:${PATH}"
-export PYTHONPATH="${HERE}/usr/lib/python3/site-packages:${PYTHONPATH}"
+export PATH="\${HERE}/usr/bin:\${PATH}"
+export PYTHONPATH="\${HERE}/usr/lib/python3/site-packages:\${PYTHONPATH}"
 
-cd "${HERE}"
-exec python3 "${HERE}/usr/bin/minitools" "$@"
+cd "\${HERE}"
+exec python3 "\${HERE}/usr/bin/$APP_PKG_NAME" "\$@"
 EOF
     chmod +x "$APPDIR/AppRun"
-    
+
     # Create desktop file
-    cat > "$APPDIR/minitools.desktop" << 'EOF'
+    cat > "$APPDIR/$APPDESKTOP_FILE" << EOF
 [Desktop Entry]
-Name=MiniTools
+Name=$APP_NAME
 Comment=System Information and Maintenance Tools
 Exec=AppRun
-Icon=minitools
+Icon=$APP_PKG_NAME
 Terminal=false
 Type=Application
 Categories=System;Utility;
 EOF
-    
+
     # Copy desktop file to AppImage location
-    cp "$APPDIR/minitools.desktop" "$APPDIR/usr/share/applications/"
-    
-    # Download appimagetool
-    APPIMAGETOOL="appimagetool-x86_64.AppImage"
+    cp "$APPDIR/$APPDESKTOP_FILE" "$APPDIR/usr/share/applications/"
     APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/$APPIMAGETOOL"
     
     echo ""
@@ -418,16 +509,135 @@ EOF
     
     # Build AppImage
     if [ -f "$APPIMAGETOOL" ]; then
-        ARCH=x86_64 ./"$APPIMAGETOOL" "$APPDIR" "MiniTools-${VERSION}-x86_64.AppImage" 2>&1
-        if [ -f "MiniTools-${VERSION}-x86_64.AppImage" ]; then
-            chmod +x "MiniTools-${VERSION}-x86_64.AppImage"
-            echo -e "${GREEN}✓ AppImage package created: MiniTools-${VERSION}-x86_64.AppImage${NC}"
+        ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$APPIMAGE_OUTPUT" 2>&1
+        if [ -f "$APPIMAGE_OUTPUT" ]; then
+            chmod +x "$APPIMAGE_OUTPUT"
+            echo -e "${GREEN}✓ AppImage package created: $APPIMAGE_OUTPUT${NC}"
         else
             echo -e "${RED}✗ AppImage package build failed${NC}"
         fi
     else
         echo -e "${RED}✗ appimagetool download failed${NC}"
     fi
+    fi
+fi
+
+# ============================================================================
+# Build Self-Contained AppImage (includes Python3 and PyQt6)
+# ============================================================================
+if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}Building Self-Contained AppImage package...${NC}"
+    echo -e "${YELLOW}Note: This will use PyInstaller to bundle the application${NC}"
+    echo -e "${YELLOW}      This will create a much larger AppImage but works on any system${NC}"
+    echo ""
+
+    # Check for appimagetool
+    APPIMAGETOOL="appimagetool-x86_64.AppImage"
+    if [ -f "$BUILD_DIR/$APPIMAGETOOL" ]; then
+        APPIMAGETOOL="$BUILD_DIR/$APPIMAGETOOL"
+    elif [ -f "$APPIMAGETOOL" ]; then
+        APPIMAGETOOL="./$APPIMAGETOOL"
+    else
+        echo -e "${RED}✗ appimagetool not found${NC}"
+        echo -e "${YELLOW}Download appimagetool to build directory:${NC}"
+        echo -e "  wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -P build/"
+        echo -e "  chmod +x build/appimagetool-x86_64.AppImage"
+        echo ""
+        echo -e "${YELLOW}Or run: ./download-build-tools.sh${NC}"
+        echo ""
+        BUILD_APPIMAGE_BUNDLE="false"
+    fi
+
+    # Check for PyInstaller
+    if ! command -v pyinstaller &> /dev/null; then
+        echo -e "${RED}✗ PyInstaller not found${NC}"
+        echo -e "${YELLOW}Install PyInstaller:${NC}"
+        echo -e "  pip install pyinstaller${NC}"
+        echo ""
+        BUILD_APPIMAGE_BUNDLE="false"
+    fi
+
+    if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
+        # Create AppDir for self-contained build
+        # Unified package naming: MiniTools-1.0.2-amd64-self-contained.AppImage
+        SELF_CONTAINED_APPDIR="${BUILD_DIR}/${APP_NAME}.SelfContained.AppDir"
+        SELF_CONTAINED_OUTPUT="${BUILD_DIR}/${APP_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained.AppImage"
+        PYINSTALLER_DIR="${BUILD_DIR}/pyinstaller_build"
+
+        # Clean up previous build artifacts
+        echo -e "${YELLOW}Cleaning up previous Self-Contained AppImage build artifacts...${NC}"
+        rm -rf "$SELF_CONTAINED_APPDIR"
+        rm -f "$SELF_CONTAINED_OUTPUT"
+        rm -rf "$PYINSTALLER_DIR"
+
+        # Create AppDir structure
+        mkdir -p "$SELF_CONTAINED_APPDIR/usr/bin"
+        mkdir -p "$SELF_CONTAINED_APPDIR/usr/share/applications"
+        mkdir -p "$SELF_CONTAINED_APPDIR/usr/share/icons/hicolor/256x256/apps"
+
+        # Build with PyInstaller
+        echo -e "${BLUE}Building with PyInstaller...${NC}"
+        pyinstaller --onefile \
+            --name "$APP_PKG_NAME" \
+            --distpath "$SELF_CONTAINED_APPDIR/usr/bin" \
+            --icon="$APP_ICON_PATH" \
+            --windowed \
+            --hidden-import=PyQt6 \
+            --hidden-import=PyQt6.QtCore \
+            --hidden-import=PyQt6.QtGui \
+            --hidden-import=PyQt6.QtWidgets \
+            "$APP_SCRIPT_PATH"
+
+        if [ ! -f "$SELF_CONTAINED_APPDIR/usr/bin/$APP_PKG_NAME" ]; then
+            echo -e "${RED}✗ PyInstaller build failed${NC}"
+            BUILD_APPIMAGE_BUNDLE="false"
+        fi
+    fi
+
+    if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
+        # Copy icon
+        if [ -f "$APP_ICON_PATH" ]; then
+            cp "$APP_ICON_PATH" "$SELF_CONTAINED_APPDIR/$APP_PKG_NAME.png"
+            cp "$APP_ICON_PATH" "$SELF_CONTAINED_APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_PKG_NAME.png"
+        fi
+
+        # Create AppRun
+        cat > "$SELF_CONTAINED_APPDIR/AppRun" << EOF
+#!/bin/bash
+SELF=\$(readlink -f "\$0")
+HERE=\${SELF%/*}
+
+cd "\${HERE}"
+exec "\${HERE}/usr/bin/$APP_PKG_NAME" "\$@"
+EOF
+        chmod +x "$SELF_CONTAINED_APPDIR/AppRun"
+
+        # Create desktop file
+        cat > "$SELF_CONTAINED_APPDIR/$APP_PKG_NAME.desktop" << EOF
+[Desktop Entry]
+Name=$APP_NAME
+Comment=System Information and Maintenance Tools
+Exec=AppRun
+Icon=$APP_PKG_NAME
+Terminal=false
+Type=Application
+Categories=System;Utility;
+EOF
+
+        # Build AppImage using appimagetool
+        echo -e "${BLUE}Building AppImage with appimagetool...${NC}"
+        ARCH=x86_64 "$APPIMAGETOOL" "$SELF_CONTAINED_APPDIR" "$SELF_CONTAINED_OUTPUT" 2>&1
+
+        if [ -f "$SELF_CONTAINED_OUTPUT" ]; then
+            chmod +x "$SELF_CONTAINED_OUTPUT"
+            echo -e "${GREEN}✓ Self-contained AppImage created: $SELF_CONTAINED_OUTPUT${NC}"
+        else
+            echo -e "${RED}✗ Self-contained AppImage build failed${NC}"
+        fi
+
+        # Clean up PyInstaller build directory
+        rm -rf "$PYINSTALLER_DIR"
     fi
 fi
 
@@ -443,34 +653,48 @@ echo -e "${BLUE}Packages created in: $BUILD_DIR${NC}"
 echo ""
 
 # List created packages
-if ls *.deb >/dev/null 2>&1; then
+DEB_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.deb 2>/dev/null | wc -l)
+RPM_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.rpm 2>/dev/null | wc -l)
+APPIMAGE_COUNT=$(ls "${BUILD_DIR}"/${APP_NAME}-*.AppImage 2>/dev/null | wc -l)
+
+if [ "$DEB_COUNT" -gt 0 ]; then
     echo -e "${GREEN}DEB packages:${NC}"
-    ls -lh *.deb 2>/dev/null
+    ls -lh "${BUILD_DIR}"/${APP_PKG_NAME}-*.deb 2>/dev/null
 fi
 
-if ls *.rpm >/dev/null 2>&1; then
+if [ "$RPM_COUNT" -gt 0 ]; then
     echo -e "${GREEN}RPM packages:${NC}"
-    ls -lh *.rpm 2>/dev/null
+    ls -lh "${BUILD_DIR}"/${APP_PKG_NAME}-*.rpm 2>/dev/null
 fi
 
-if ls *.AppImage >/dev/null 2>&1; then
+if [ "$APPIMAGE_COUNT" -gt 0 ]; then
     echo -e "${GREEN}AppImage packages:${NC}"
-    ls -lh *.AppImage 2>/dev/null
+    ls -lh "${BUILD_DIR}"/${APP_NAME}-*.AppImage 2>/dev/null
+    echo ""
+    echo -e "${BLUE}  System Python: Run on systems with Python3 installed${NC}"
+    echo -e "${BLUE}  Self-contained: Run on any Linux system (includes Python3)${NC}"
 fi
 
-if [ ! -f *.deb ] && [ ! -f *.rpm ] && [ ! -f *.AppImage ]; then
+if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ] && [ "$APPIMAGE_COUNT" -eq 0 ]; then
     echo -e "${YELLOW}No packages were created${NC}"
 fi
 
 echo ""
 echo -e "${BLUE}Installation commands:${NC}"
-if [ -f "${DEB_DIR}.deb" ]; then
-    echo -e "  DEB: ${GREEN}sudo dpkg -i ${DEB_DIR}.deb${NC}"
+if [ -f "$DEB_OUTPUT" ]; then
+    echo -e "  DEB: ${GREEN}sudo dpkg -i $DEB_OUTPUT${NC}"
 fi
-if [ -f "minitools-${VERSION}-1.x86_64.rpm" ]; then
-    echo -e "  RPM: ${GREEN}sudo rpm -i minitools-${VERSION}-1.x86_64.rpm${NC}"
+if [ -f "$RPM_OUTPUT" ]; then
+    echo -e "  RPM: ${GREEN}sudo rpm -i $RPM_OUTPUT${NC}"
 fi
-if [ -f "MiniTools-${VERSION}-x86_64.AppImage" ]; then
-    echo -e "  AppImage: ${GREEN}./MiniTools-${VERSION}-x86_64.AppImage${NC}"
+if [ -f "$APPIMAGE_OUTPUT" ]; then
+    # Convert absolute path to relative for display
+    REL_PATH=$(realpath --relative-to="$PROJECT_ROOT" "$APPIMAGE_OUTPUT")
+    echo -e "  AppImage (System Python): ${GREEN}./$REL_PATH${NC}"
+fi
+if [ -f "$SELF_CONTAINED_OUTPUT" ]; then
+    # Convert absolute path to relative for display
+    REL_PATH=$(realpath --relative-to="$PROJECT_ROOT" "$SELF_CONTAINED_OUTPUT")
+    echo -e "  AppImage (Self-contained): ${GREEN}./$REL_PATH${NC}"
 fi
 echo ""

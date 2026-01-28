@@ -1,4 +1,4 @@
-# MiniTools
+# [MiniTools](https://github.com/Perrolito/MiniTools.py/)
 
 A small but modern looking GUI application for Linux system information and maintenance, built with PyQt6.
 
@@ -43,6 +43,57 @@ Click any button in the interface to use the corresponding tool. The output will
 ### Adding Extensions
 
 Place your custom scripts (`.sh` or `.py`) in `~/.config/hotodogo/minitools/extensions/`. They will automatically appear in the Extensions section.
+
+## Building Packages
+
+### DEB Package
+
+```bash
+./build.sh
+# Select option 1
+```
+
+### RPM Package
+
+```bash
+./build.sh
+# Select option 2
+```
+
+### AppImage
+
+**Note**: Requires downloading appimagetool first:
+
+```bash
+# Download appimagetool to build directory
+wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -P build/
+chmod +x build/appimagetool-x86_64.AppImage
+```
+
+#### System Python
+
+Requires Python3 and PyQt6 installed on the target system.
+
+```bash
+# Build
+./build.sh
+# Select option 3
+```
+
+#### Self-contained
+
+Includes Python3 and PyQt6, works on any Linux system without dependencies.
+
+**Requirements:**
+- PyInstaller: `pip install pyinstaller`
+
+```bash
+# Build
+./build.sh
+# Select option 4
+```
+
+This method uses [PyInstaller](https://pyinstaller.org/) to bundle the application with Python and all dependencies into a single executable.
 
 ## License
 
