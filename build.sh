@@ -18,6 +18,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+GRAY='\033[0;37m'
 NC='\033[0m' # No Color
 
 # Application metadata
@@ -33,8 +34,24 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 APP_SCRIPT_PATH="${PROJECT_ROOT}/${APP_PYTHON_SCRIPT}"
 APP_ICON_PATH="${PROJECT_ROOT}/${APP_ICON}"
 
-# Architecture detection
+# Architecture and OS detection
 ARCH=$(uname -m)
+OS_TYPE=$(uname -s)
+case "$OS_TYPE" in
+    Linux)
+        OS_SUFFIX="linux"
+        ;;
+    Darwin)
+        OS_SUFFIX="macos"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        OS_SUFFIX="windows"
+        ;;
+    *)
+        OS_SUFFIX="unknown"
+        ;;
+esac
+
 case "$ARCH" in
     x86_64) 
         ARCH_SUFFIX="amd64"
@@ -178,36 +195,110 @@ find_appimagetool() {
     fi
 }
 
+# Convert SVG to ICNS (macOS only)
+convert_svg_to_icns() {
+    local svg_file="$1"
+    local icns_file="$2"
+    
+    if [ "$OS_TYPE" != "Darwin" ]; then
+        print_error "Error: SVG to ICNS conversion only works on macOS"
+        return 1
+    fi
+    
+    if [ ! -f "$svg_file" ]; then
+        print_error "Error: SVG file not found: $svg_file"
+        return 1
+    fi
+    
+    # Check for ImageMagick or Inkscape
+    if check_command convert; then
+        print_info "Converting SVG to ICNS using ImageMagick..."
+        convert "$svg_file" -define icon:auto-resize=1024,512,256,128,64,32,16 "$icns_file"
+    elif check_command inkscape; then
+        print_info "Converting SVG to ICNS using Inkscape..."
+        local iconset_dir="${BUILD_DIR}/${APP_PKG_NAME}.iconset"
+        mkdir -p "$iconset_dir"
+        
+        # Export different sizes
+        local sizes=(1024 512 256 128 64 32 16)
+        for size in "${sizes[@]}"; do
+            inkscape --export-type=png --export-filename="${iconset_dir}/icon_${size}.png" -w "$size" -h "$size" "$svg_file"
+        done
+        
+        # Create iconset structure
+        cp "${iconset_dir}/icon_1024.png" "${iconset_dir}/icon_512x512@2x.png"
+        cp "${iconset_dir}/icon_512.png" "${iconset_dir}/icon_512x512.png"
+        cp "${iconset_dir}/icon_256.png" "${iconset_dir}/icon_256x256@2x.png"
+        cp "${iconset_dir}/icon_128.png" "${iconset_dir}/icon_128x128.png"
+        cp "${iconset_dir}/icon_64.png" "${iconset_dir}/icon_64x64@2x.png"
+        cp "${iconset_dir}/icon_32.png" "${iconset_dir}/icon_32x32.png"
+        cp "${iconset_dir}/icon_16.png" "${iconset_dir}/icon_16x16.png"
+        
+        # Convert to ICNS
+        iconutil -c icns "$iconset_dir" -o "$icns_file"
+        
+        # Cleanup
+        rm -rf "$iconset_dir"
+    else
+        print_error "Error: Neither ImageMagick nor Inkscape found"
+        print_info "Install ImageMagick: brew install imagemagick"
+        print_info "Or install Inkscape: brew install --cask inkscape"
+        return 1
+    fi
+    
+    if [ -f "$icns_file" ]; then
+        print_success "✓ ICNS file created: $icns_file"
+        return 0
+    else
+        print_error "✗ Failed to create ICNS file"
+        return 1
+    fi
+}
+
 # Print usage
 print_usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Build MiniTools packages for Linux.
+Build MiniTools packages for Linux, macOS, and Windows.
 
 OPTIONS:
-    -f, --format FORMAT     Build format: deb, rpm, appimage, self-contained, all
+    -f, --format FORMAT     Build format: deb, rpm, appimage, self-contained, macos, dmg, all
     -h, --help              Show this help message
     -n, --non-interactive   Run in non-interactive mode (requires -f)
 
 EXAMPLES:
     $0                      Interactive mode (select format from menu)
     $0 -f deb              Build DEB package only
-    $0 -f all               Build all package formats
-    $0 -f appimage -n       Build AppImage in non-interactive mode
+    $0 -f appimage          Build AppImage (system Python)
+    $0 -f self-contained    Build self-contained AppImage
+    $0 -f macos             Build macOS .app bundle (macOS only)
+    $0 -f dmg               Build macOS .app + .dmg (macOS only)
+    $0 -f all               Build all package formats for current platform    $0 -f appimage -n       Build AppImage in non-interactive mode
 
 SUPPORTED FORMATS:
-    deb                    DEB package (Debian/Ubuntu)
-    rpm                    RPM package (Fedora/RHEL)
-    appimage               AppImage (requires system Python3)
-    self-contained         AppImage (includes Python3 and PyQt6)
-    all                    All formats
+    Linux:
+        deb                    DEB package (Debian/Ubuntu)
+        rpm                    RPM package (Fedora/RHEL)
+        appimage               AppImage (requires system Python3)
+        self-contained         AppImage (includes Python3 and PyQt6)
+    
+    macOS:
+        macos                  .app bundle
+        dmg                    .dmg installer (.app + .dmg)
 
 REQUIREMENTS:
-    DEB:  dpkg-deb
-    RPM:  rpmbuild
+    Linux DEB:  dpkg-deb
+    Linux RPM:  rpmbuild
     AppImage: appimagetool + system Python3 + PyQt6
     Self-contained: appimagetool + PyInstaller
+    macOS: PyInstaller + ImageMagick/Inkscape (for SVG to ICNS)
+    DMG: dmgbuild (optional, for creating .dmg installer)
+
+NOTES:
+    macOS packages can only be built on macOS
+    For cross-platform builds, use GitHub Actions with appropriate runners
+    For Windows builds, use build.bat on Windows
 EOF
 }
 
@@ -220,6 +311,8 @@ BUILD_DEB="false"
 BUILD_RPM="false"
 BUILD_APPIMAGE="false"
 BUILD_APPIMAGE_BUNDLE="false"
+BUILD_MACOS="false"
+BUILD_MACOS_DMG="false"
 INTERACTIVE="true"
 
 while [[ $# -gt 0 ]]; do
@@ -246,11 +339,26 @@ while [[ $# -gt 0 ]]; do
                     BUILD_APPIMAGE_BUNDLE="true"
                     INTERACTIVE="false"
                     ;;
+                macos)
+                    BUILD_MACOS="true"
+                    BUILD_MACOS_DMG="false"
+                    INTERACTIVE="false"
+                    ;;
+                dmg)
+                    BUILD_MACOS="true"
+                    BUILD_MACOS_DMG="true"
+                    INTERACTIVE="false"
+                    ;;
                 all)
-                    BUILD_DEB="true"
-                    BUILD_RPM="true"
-                    BUILD_APPIMAGE="true"
-                    BUILD_APPIMAGE_BUNDLE="true"
+                    if [ "$OS_TYPE" = "Darwin" ]; then
+                        BUILD_MACOS="true"
+                        BUILD_MACOS_DMG="true"
+                    else
+                        BUILD_DEB="true"
+                        BUILD_RPM="true"
+                        BUILD_APPIMAGE="true"
+                        BUILD_APPIMAGE_BUNDLE="true"
+                    fi
                     INTERACTIVE="false"
                     ;;
                 *)
@@ -308,25 +416,162 @@ mkdir -p "$BUILD_DIR"
 
 if [ "$INTERACTIVE" = "true" ]; then
     print_header "Select Build Format"
-    echo "1) DEB Package (Debian/Ubuntu)"
-    echo "2) RPM Package (Fedora/RHEL)"
-    echo "3) AppImage (Universal, requires system Python3)"
-    echo "4) AppImage (Self-contained, includes Python3)"
-    echo "5) All formats"
-    echo "0) Exit"
     echo ""
-    read -p "Enter your choice [0-5]: " choice
+    
+    # Determine supported formats
+    CAN_BUILD_DEB="true"
+    CAN_BUILD_RPM="true"
+    CAN_BUILD_APPIMAGE="true"
+    CAN_BUILD_BUNDLE="true"
+    CAN_BUILD_MACOS="false"
+    CAN_BUILD_MACOS_DMG="false"
+    
+    if [ "$OS_TYPE" = "Darwin" ]; then
+        CAN_BUILD_DEB="false"
+        CAN_BUILD_RPM="false"
+        CAN_BUILD_APPIMAGE="false"
+        CAN_BUILD_BUNDLE="false"
+        CAN_BUILD_MACOS="true"
+        CAN_BUILD_MACOS_DMG="true"
+    fi
+    
+    # Display menu with availability status
+    if [ "$CAN_BUILD_DEB" = "true" ]; then
+        echo -e "  ${GREEN}1)${NC} DEB Package (Debian/Ubuntu)"
+    else
+        echo -e "  ${GRAY}1)${NC} DEB Package (Debian/Ubuntu) ${GRAY}[macOS not supported]${NC}"
+    fi
+    
+    if [ "$CAN_BUILD_RPM" = "true" ]; then
+        echo -e "  ${GREEN}2)${NC} RPM Package (Fedora/RHEL)"
+    else
+        echo -e "  ${GRAY}2)${NC} RPM Package (Fedora/RHEL) ${GRAY}[macOS not supported]${NC}"
+    fi
+    
+    if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then
+        echo -e "  ${GREEN}3)${NC} AppImage (Universal, requires system Python3)"
+    else
+        echo -e "  ${GRAY}3)${NC} AppImage (Universal) ${GRAY}[macOS not supported]${NC}"
+    fi
+    
+    if [ "$CAN_BUILD_BUNDLE" = "true" ]; then
+    
+            echo -e "  ${GREEN}4)${NC} AppImage (Self-contained, includes Python3)"
+    
+        else
+    
+            echo -e "  ${GRAY}4)${NC} AppImage (Self-contained) ${GRAY}[$OS_TYPE not supported]${NC}"
+    
+        fi
+    
+        
+    
+        echo ""
+    
+        
+    
+        if [ "$CAN_BUILD_MACOS" = "true" ]; then
+    
+            echo -e "  ${GREEN}5)${NC} macOS App Bundle (.app)"
+    
+            echo -e "  ${GREEN}6)${NC} macOS DMG Installer (.app + .dmg)"
+    
+        else
+    
+            echo -e "  ${GRAY}5)${NC} macOS App Bundle (.app) ${GRAY}[$OS_TYPE not supported]${NC}"
+    
+            echo -e "  ${GRAY}6)${NC} macOS DMG Installer (.dmg) ${GRAY}[$OS_TYPE not supported]${NC}"
+    
+        fi
+    
+            
+    
+            echo ""
+    
+            echo "7) All formats"
+    
+            echo "0) Exit"
+    
+            echo ""
+    
+            
+    
+            # Show platform
+    
+            print_info "Current platform: $OS_TYPE ($ARCH)"
+    
+            echo ""
+    
+            
+    
+            read -p "Enter your choice [0-7]: " choice
 
     case $choice in
-        1) BUILD_DEB="true" ;;
-        2) BUILD_RPM="true" ;;
-        3) BUILD_APPIMAGE="true" ;;
-        4) BUILD_APPIMAGE_BUNDLE="true" ;;
+        1)
+            if [ "$CAN_BUILD_DEB" = "true" ]; then
+                BUILD_DEB="true"
+            else
+                print_error "Error: DEB packages cannot be built on $OS_TYPE"
+                print_info "Please run this script on a Linux system"
+                exit 1
+            fi
+            ;;
+        2)
+            if [ "$CAN_BUILD_RPM" = "true" ]; then
+                BUILD_RPM="true"
+            else
+                print_error "Error: RPM packages cannot be built on $OS_TYPE"
+                print_info "Please run this script on a Linux system"
+                exit 1
+            fi
+            ;;
+        3)
+            if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then
+                BUILD_APPIMAGE="true"
+            else
+                print_error "Error: AppImage cannot be built on $OS_TYPE"
+                print_info "Please run this script on a Linux system"
+                exit 1
+            fi
+            ;;
+        4)
+            if [ "$CAN_BUILD_BUNDLE" = "true" ]; then
+                BUILD_APPIMAGE_BUNDLE="true"
+            else
+                print_error "Error: Self-contained AppImage cannot be built on $OS_TYPE"
+                print_info "Please run this script on a Linux system"
+                exit 1
+            fi
+            ;;
         5)
-            BUILD_DEB="true"
-            BUILD_RPM="true"
-            BUILD_APPIMAGE="true"
-            BUILD_APPIMAGE_BUNDLE="true"
+            if [ "$CAN_BUILD_MACOS" = "true" ]; then
+                BUILD_MACOS="true"
+                BUILD_MACOS_DMG="false"
+            else
+                print_error "Error: macOS packages cannot be built on $OS_TYPE"
+                print_info "Please run this script on macOS"
+                print_info "Or use GitHub Actions with macOS runner for cross-platform builds"
+                exit 1
+            fi
+            ;;
+        6)
+            if [ "$CAN_BUILD_MACOS" = "true" ]; then
+                BUILD_MACOS="true"
+                BUILD_MACOS_DMG="true"
+            else
+                print_error "Error: macOS packages cannot be built on $OS_TYPE"
+                print_info "Please run this script on macOS"
+                print_info "Or use GitHub Actions with macOS runner for cross-platform builds"
+                exit 1
+            fi
+            ;;
+        7)
+            if [ "$CAN_BUILD_DEB" = "true" ]; then BUILD_DEB="true"; fi
+            if [ "$CAN_BUILD_RPM" = "true" ]; then BUILD_RPM="true"; fi
+            if [ "$CAN_BUILD_APPIMAGE" = "true" ]; then BUILD_APPIMAGE="true"; fi
+            if [ "$CAN_BUILD_BUNDLE" = "true" ]; then BUILD_BUNDLE="true"; fi
+            if [ "$CAN_BUILD_MACOS" = "true" ]; then BUILD_MACOS="true"; fi
+            if [ "$CAN_BUILD_MACOS_DMG" = "true" ]; then BUILD_MACOS_DMG="true"; fi
             ;;
         0)
             print_warning "Build cancelled"
@@ -346,6 +591,8 @@ print_info "Building formats:"
 [ "$BUILD_RPM" = "true" ] && echo -e "  ${GREEN}✓ RPM${NC}"
 [ "$BUILD_APPIMAGE" = "true" ] && echo -e "  ${GREEN}✓ AppImage (System Python)${NC}"
 [ "$BUILD_APPIMAGE_BUNDLE" = "true" ] && echo -e "  ${GREEN}✓ AppImage (Self-contained)${NC}"
+[ "$BUILD_MACOS" = "true" ] && echo -e "  ${GREEN}✓ macOS App Bundle${NC}"
+[ "$BUILD_MACOS_DMG" = "true" ] && echo -e "  ${GREEN}✓ macOS DMG Installer${NC}"
 echo ""
 
 # ============================================================================
@@ -774,6 +1021,120 @@ EOF
 fi
 
 # ============================================================================
+# Build macOS App Bundle
+# ============================================================================
+
+if [ "$BUILD_MACOS" = "true" ]; then
+    print_header "Building macOS App Bundle"
+    
+    if [ "$OS_TYPE" != "Darwin" ]; then
+        print_error "Error: macOS packages can only be built on macOS"
+        print_info "Use GitHub Actions or a macOS machine to build macOS packages"
+        BUILD_MACOS="false"
+    fi
+    
+    if [ "$BUILD_MACOS" = "true" ]; then
+        # Check for PyInstaller
+        if ! check_command pyinstaller; then
+            print_error "✗ PyInstaller not found"
+            print_info "Install PyInstaller: pip install pyinstaller"
+            BUILD_MACOS="false"
+        fi
+    fi
+    
+    if [ "$BUILD_MACOS" = "true" ]; then
+        # Setup paths
+        MACOS_APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
+        MACOS_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.app"
+        DMG_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.dmg"
+        ICNS_FILE="${BUILD_DIR}/${APP_PKG_NAME}.icns"
+        
+        # Clean up previous build
+        print_info "Cleaning up previous macOS build artifacts..."
+        rm -rf "$MACOS_APP_DIR"
+        rm -rf "$MACOS_OUTPUT"
+        rm -f "$DMG_OUTPUT"
+        rm -f "$ICNS_FILE"
+        
+        # Convert SVG to ICNS if needed
+        if [ -f "$APP_ICON_PATH" ] && [[ "$APP_ICON_PATH" == *.svg ]]; then
+            if ! convert_svg_to_icns "$APP_ICON_PATH" "$ICNS_FILE"; then
+                print_warning "Failed to convert SVG to ICNS, will build without icon"
+                ICNS_FILE=""
+            fi
+        elif [ -f "$APP_ICON_PATH" ] && [[ "$APP_ICON_PATH" == *.icns ]]; then
+            cp "$APP_ICON_PATH" "$ICNS_FILE"
+        fi
+        
+        # Build .app bundle with PyInstaller
+        print_info "Building .app bundle with PyInstaller..."
+        local pyinstaller_args=(
+            --windowed
+            --name "$APP_PKG_NAME"
+            --distpath "$BUILD_DIR"
+            --icon="$ICNS_FILE"
+            --hidden-import=PyQt6
+            --hidden-import=PyQt6.QtCore
+            --hidden-import=PyQt6.QtGui
+            --hidden-import=PyQt6.QtWidgets
+            "$APP_SCRIPT_PATH"
+        )
+        
+        if [ -n "$ICNS_FILE" ]; then
+            pyinstaller_args+=(--icon="$ICNS_FILE")
+        fi
+        
+        pyinstaller "${pyinstaller_args[@]}"
+        
+        # PyInstaller creates ${BUILD_DIR}/${APP_PKG_NAME}.app
+        if [ -d "${BUILD_DIR}/${APP_PKG_NAME}.app" ]; then
+            # Rename to standard format
+            mv "${BUILD_DIR}/${APP_PKG_NAME}.app" "$MACOS_OUTPUT"
+            print_success "✓ .app bundle created: $MACOS_OUTPUT"
+        else
+            print_error "✗ Failed to create .app bundle"
+            BUILD_MACOS="false"
+        fi
+    fi
+    
+    # Create DMG if requested
+    if [ "$BUILD_MACOS" = "true" ] && [ "$BUILD_MACOS_DMG" = "true" ]; then
+        if check_command dmgbuild; then
+            print_info "Creating DMG installer..."
+            
+            # Create dmgbuild config
+            local dmg_config="${BUILD_DIR}/dmg_settings.py"
+            cat > "$dmg_config" << EOF
+format = 'UDBZ'
+volume_name = '${APP_NAME}'
+files = ['$MACOS_OUTPUT']
+symlinks = {'Applications': '/Applications'}
+icon_locations = {
+    '$MACOS_OUTPUT': (100, 120)
+}
+icon_size = 80
+window_rect = ((100, 100), (640, 480))
+default_view = 'icon-view'
+show_icon_view_paths = ['Applications']
+EOF
+            
+            dmgbuild -s "$dmg_config" "$APP_NAME" "$DMG_OUTPUT"
+            
+            if [ -f "$DMG_OUTPUT" ]; then
+                print_success "✓ DMG installer created: $DMG_OUTPUT"
+            else
+                print_error "✗ Failed to create DMG installer"
+            fi
+            
+            rm -f "$dmg_config"
+        else
+            print_warning "⚠ dmgbuild not found, skipping DMG creation"
+            print_info "Install dmgbuild: pip install dmgbuild"
+        fi
+    fi
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 
@@ -785,6 +1146,8 @@ echo ""
 DEB_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.deb 2>/dev/null | wc -l)
 RPM_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.rpm 2>/dev/null | wc -l)
 APPIMAGE_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.AppImage 2>/dev/null | wc -l)
+MACOS_APP_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.app 2>/dev/null | wc -l)
+MACOS_DMG_COUNT=$(ls "${BUILD_DIR}"/${APP_PKG_NAME}-*.dmg 2>/dev/null | wc -l)
 
 # List created packages
 if [ "$DEB_COUNT" -gt 0 ]; then
@@ -799,13 +1162,21 @@ fi
 
 if [ "$APPIMAGE_COUNT" -gt 0 ]; then
     echo -e "${GREEN}AppImage packages:${NC}"
-    ls -lh "${BUILD_DIR}"/${APP_NAME}-*.AppImage 2>/dev/null
+    ls -lh "${BUILD_DIR}"/${APP_PKG_NAME}-*.AppImage 2>/dev/null
     echo ""
     print_info "  System Python: Run on systems with Python3 installed"
     print_info "  Self-contained: Run on any Linux system (includes Python3)"
 fi
 
-if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ] && [ "$APPIMAGE_COUNT" -eq 0 ]; then
+if [ "$MACOS_APP_COUNT" -gt 0 ]; then
+    echo -e "${GREEN}macOS packages:${NC}"
+    ls -lh "${BUILD_DIR}"/${APP_PKG_NAME}-*.app 2>/dev/null
+    if [ "$MACOS_DMG_COUNT" -gt 0 ]; then
+        ls -lh "${BUILD_DIR}"/${APP_PKG_NAME}-*.dmg 2>/dev/null
+    fi
+fi
+
+if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ] && [ "$APPIMAGE_COUNT" -eq 0 ] && [ "$MACOS_APP_COUNT" -eq 0 ]; then
     print_warning "No packages were created"
 fi
 
@@ -826,5 +1197,13 @@ fi
 if [ -f "$SELF_CONTAINED_OUTPUT" ]; then
     REL_PATH=$(realpath --relative-to="$PROJECT_ROOT" "$SELF_CONTAINED_OUTPUT")
     echo -e "  AppImage (Self-contained): ${GREEN}./$REL_PATH${NC}"
+fi
+if [ -f "$MACOS_OUTPUT" ]; then
+    REL_PATH=$(realpath --relative-to="$PROJECT_ROOT" "$MACOS_OUTPUT")
+    echo -e "  macOS App: ${GREEN}open $REL_PATH${NC}"
+fi
+if [ -f "$DMG_OUTPUT" ]; then
+    REL_PATH=$(realpath --relative-to="$PROJECT_ROOT" "$DMG_OUTPUT")
+    echo -e "  macOS DMG: ${GREEN}open $REL_PATH${NC}"
 fi
 echo ""

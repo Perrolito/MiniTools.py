@@ -5,7 +5,7 @@ A modern, professional GUI application for system information and maintenance
 """
 
 __app_name__ = "Mini Tools"
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "Ezra"
 
 import os
@@ -15,6 +15,7 @@ import platform
 import threading
 import re
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple, Callable
 from enum import Enum
@@ -29,10 +30,71 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QMessageBox, QTextEdit, QFrame,
     QProgressBar, QGroupBox, QScrollArea, QDialog, QDialogButtonBox,
-    QButtonGroup, QRadioButton, QInputDialog, QSlider, QLineEdit, QSizePolicy
+    QButtonGroup, QRadioButton, QInputDialog, QSlider, QLineEdit, QSizePolicy, QTextBrowser
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer, QDateTime
 from PyQt6.QtGui import QFont, QColor, QPalette, QIcon, QPixmap, QShortcut, QKeySequence, QPainter, QPen
+
+
+class Platform(Enum):
+    """Platform enumeration"""
+    LINUX = "linux"
+    WINDOWS = "windows"
+    MACOS = "macos"
+    UNKNOWN = "unknown"
+
+
+class PlatformHelper:
+    """Cross-platform helper for system-specific operations"""
+    
+    @staticmethod
+    def get_platform() -> Platform:
+        """Detect current platform"""
+        system = platform.system().lower()
+        if system == "linux":
+            return Platform.LINUX
+        elif system == "windows":
+            return Platform.WINDOWS
+        elif system == "darwin":
+            return Platform.MACOS
+        return Platform.UNKNOWN
+    
+    @staticmethod
+    def is_windows() -> bool:
+        """Check if running on Windows"""
+        return PlatformHelper.get_platform() == Platform.WINDOWS
+    
+    @staticmethod
+    def is_linux() -> bool:
+        """Check if running on Linux"""
+        return PlatformHelper.get_platform() == Platform.LINUX
+    
+    @staticmethod
+    def is_macos() -> bool:
+        """Check if running on macOS"""
+        return PlatformHelper.get_platform() == Platform.MACOS
+    
+    @staticmethod
+    def get_extensions_dir() -> str:
+        """Get the extensions directory path for current platform"""
+        if PlatformHelper.is_windows():
+            # Windows: %APPDATA%\hotodogo\minitools\extensions
+            appdata = os.environ.get('APPDATA')
+            if not appdata:
+                # Fallback to user home + AppData\Roaming
+                home = os.path.expanduser('~')
+                appdata = os.path.join(home, 'AppData', 'Roaming')
+            # Build extensions path using pathlib for better cross-platform handling
+            from pathlib import Path
+            extensions_dir = Path(appdata) / 'hotodogo' / 'minitools' / 'extensions'
+            return str(extensions_dir)
+        elif PlatformHelper.is_macos():
+            # macOS: ~/Library/Application Support/hotodogo/minitools/extensions
+            home = os.path.expanduser('~')
+            return os.path.join(home, 'Library', 'Application Support', 'hotodogo', 'minitools', 'extensions')
+        else:
+            # Linux: ~/.config/hotodogo/minitools/extensions
+            return os.path.expanduser('~/.config/hotodogo/minitools/extensions')
 
 
 class ShellCommandHelper:
@@ -56,12 +118,16 @@ class ShellCommandHelper:
             stderr_target = subprocess.DEVNULL if silent else subprocess.PIPE
             stdout_target = subprocess.PIPE if capture_output else None
             
+            # On Windows, use shell=True for some commands
+            shell = PlatformHelper.is_windows() and command[0] in ['cmd', 'powershell']
+            
             result = subprocess.run(
                 command,
                 stdout=stdout_target,
                 stderr=stderr_target,
                 text=True,
-                check=False
+                check=False,
+                shell=shell
             )
             
             stdout = result.stdout if capture_output else ""
@@ -133,6 +199,12 @@ class Config:
     # Extensions
     EXTENSIONS_DIR = "~/.config/hotodogo/minitools/extensions"
     
+    # Use PlatformHelper to get actual extensions directory
+    @staticmethod
+    def get_extensions_dir() -> str:
+        """Get the absolute path to the extensions directory"""
+        return PlatformHelper.get_extensions_dir()
+    
     # Colors for dark theme
     DARK_COLORS = {
         "info": "#d4d4d4",
@@ -195,9 +267,34 @@ class SystemInfoWorker(QThread):
             "update": self.get_update_info,
             "flatpak": self.get_flatpak_update_info
         }
+        
+        # Register Windows-specific handlers
+        if PlatformHelper.is_windows():
+            self.INFO_HANDLERS.update({
+                "cpu_windows": self.get_cpu_info_windows,
+                "memory_windows": self.get_memory_info_windows,
+                "kernel_windows": self.get_kernel_info_windows,
+                "swap_windows": self.get_swap_info_windows,
+                "disk_windows": self.get_disk_info_windows
+            })
     
     def run(self):
         """Execute the appropriate info handler based on info_type"""
+        # Check platform support
+        if PlatformHelper.is_windows() and self.info_type in ["update", "flatpak"]:
+            self.error_signal.emit("This feature is not supported on Windows")
+            return
+        if PlatformHelper.is_windows() and self.info_type in ["cpu", "memory", "kernel", "swap", "disk"]:
+            handler = self.INFO_HANDLERS.get(f"{self.info_type}_windows")
+            if handler:
+                try:
+                    handler()
+                except Exception as e:
+                    self.error_signal.emit(f"Error: {str(e)}")
+            else:
+                self.error_signal.emit(f"Windows support for {self.info_type} is not yet implemented")
+            return
+        
         handler = self.INFO_HANDLERS.get(self.info_type)
         if handler:
             try:
@@ -494,8 +591,205 @@ class SystemInfoWorker(QThread):
         output = "\n".join(result)
         self.data_ready.emit("Disk Information", output)
     
+    def get_cpu_info_windows(self):
+        """Get CPU information on Windows"""
+        result = []
+        
+        try:
+            import platform
+            import wmi
+            
+            c = wmi.WMI()
+            
+            # Get CPU info
+            for cpu in c.Win32_Processor():
+                result.append(f"Model: {cpu.Name}")
+                result.append(f"Manufacturer: {cpu.Manufacturer}")
+                result.append(f"Max Clock Speed: {cpu.MaxClockSpeed / 1000:.2f} GHz")
+                result.append(f"Number of Cores: {cpu.NumberOfCores}")
+                result.append(f"Number of Logical Processors: {cpu.NumberOfLogicalProcessors}")
+                break
+            
+            result.append("")
+            result.append(f"System: {platform.system()} {platform.release()}")
+            result.append(f"Architecture: {platform.machine()}")
+            
+            # Get CPU usage
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=1)
+            result.append(f"CPU Usage: {cpu_percent:.1f}%")
+            
+            # CPU frequency
+            freq = psutil.cpu_freq()
+            if freq:
+                result.append(f"Current Frequency: {freq.current / 1000:.2f} GHz")
+                result.append(f"Max Frequency: {freq.max / 1000:.2f} GHz")
+                
+        except ImportError:
+            result.append("Error: Required libraries not installed")
+            result.append("Please install: pip install wmi psutil")
+        except Exception as e:
+            result.append(f"Error reading CPU info: {str(e)}")
+        
+        self._emit_result("CPU Information", result)
+    
+    def get_memory_info_windows(self):
+        """Get memory information on Windows"""
+        result = []
+        
+        try:
+            import psutil
+            
+            mem = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            
+            total_mb = mem.total // (1024 * 1024)
+            available_mb = mem.available // (1024 * 1024)
+            used_mb = mem.used // (1024 * 1024)
+            free_mb = mem.free // (1024 * 1024)
+            
+            result.append(f"Total Memory: {total_mb} MB ({total_mb // 1024} GB)")
+            result.append(f"Used Memory: {used_mb} MB ({used_mb // 1024} GB)")
+            result.append(f"Available Memory: {available_mb} MB ({available_mb // 1024} GB)")
+            result.append(f"Free Memory: {free_mb} MB ({free_mb // 1024} GB)")
+            result.append(f"Memory Usage: {mem.percent:.1f}%")
+            result.append("")
+            
+            # Swap info
+            swap_total_mb = swap.total // (1024 * 1024)
+            swap_used_mb = swap.used // (1024 * 1024)
+            swap_free_mb = swap.free // (1024 * 1024)
+            
+            result.append(f"Total Swap: {swap_total_mb} MB ({swap_total_mb // 1024} GB)")
+            result.append(f"Used Swap: {swap_used_mb} MB ({swap_used_mb // 1024} GB)")
+            result.append(f"Free Swap: {swap_free_mb} MB ({swap_free_mb // 1024} GB)")
+            result.append(f"Swap Usage: {swap.percent:.1f}%")
+            
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil")
+        except Exception as e:
+            result.append(f"Error reading memory info: {str(e)}")
+        
+        self._emit_result("Memory Information", result)
+    
+    def get_kernel_info_windows(self):
+        """Get kernel information on Windows"""
+        result = []
+        
+        try:
+            import platform
+            import psutil
+            
+            result.append(f"System: {platform.system()}")
+            result.append(f"Release: {platform.release()}")
+            result.append(f"Version: {platform.version()}")
+            result.append(f"Architecture: {platform.machine()}")
+            result.append(f"Hostname: {platform.node()}")
+            result.append(f"Processor: {platform.processor()}")
+            
+            # Get boot time
+            boot_time = psutil.boot_time()
+            import datetime
+            boot_datetime = datetime.datetime.fromtimestamp(boot_time)
+            result.append(f"Boot Time: {boot_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Calculate uptime
+            uptime_seconds = datetime.datetime.now().timestamp() - boot_time
+            uptime_days = int(uptime_seconds // 86400)
+            uptime_hours = int((uptime_seconds % 86400) // 3600)
+            uptime_minutes = int((uptime_seconds % 3600) // 60)
+            result.append(f"System Uptime: {uptime_days}d {uptime_hours}h {uptime_minutes}m")
+            
+        except Exception as e:
+            result.append(f"Error reading kernel info: {str(e)}")
+        
+        self._emit_result("Kernel Information", result)
+    
+    def get_swap_info_windows(self):
+        """Get swap information on Windows"""
+        result = []
+        
+        try:
+            import psutil
+            
+            swap = psutil.swap_memory()
+            
+            swap_total_mb = swap.total // (1024 * 1024)
+            swap_used_mb = swap.used // (1024 * 1024)
+            swap_free_mb = swap.free // (1024 * 1024)
+            
+            result.append(f"Total Swap: {swap_total_mb} MB ({swap_total_mb // 1024} GB)")
+            result.append(f"Used Swap: {swap_used_mb} MB ({swap_used_mb // 1024} GB)")
+            result.append(f"Free Swap: {swap_free_mb} MB ({swap_free_mb // 1024} GB)")
+            result.append(f"Swap Usage: {swap.percent:.1f}%")
+            
+            # Get swap file info
+            import wmi
+            c = wmi.WMI()
+            for pagefile in c.Win32_PageFileUsage():
+                result.append("")
+                result.append(f"Swap File: {pagefile.Name}")
+                result.append(f"Allocated Size: {pagefile.AllocatedBaseSize} MB")
+                result.append(f"Current Usage: {pagefile.CurrentUsage} MB")
+                break
+                
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil wmi")
+        except Exception as e:
+            result.append(f"Error reading swap info: {str(e)}")
+        
+        self._emit_result("Swap Information", result)
+    
+    def get_disk_info_windows(self):
+        """Get disk information on Windows"""
+        result = []
+        
+        try:
+            import psutil
+            
+            # Get disk usage
+            result.append("━━━━━━ Disk Usage ━━━━━━")
+            result.append("")
+            for partition in psutil.disk_partitions():
+                try:
+                    usage = psutil.disk_usage(partition.mountpoint)
+                    result.append(f"Device: {partition.device}")
+                    result.append(f"Mountpoint: {partition.mountpoint}")
+                    result.append(f"File system: {partition.fstype}")
+                    result.append(f"Total: {usage.total // (1024**3)} GB")
+                    result.append(f"Used: {usage.used // (1024**3)} GB")
+                    result.append(f"Free: {usage.free // (1024**3)} GB")
+                    result.append(f"Usage: {usage.percent:.1f}%")
+                    result.append("")
+                except PermissionError:
+                    continue
+            
+            # Get disk drives using WMI
+            try:
+                import wmi
+                c = wmi.WMI()
+                result.append("━━━━━━ Disk Drives ━━━━━━")
+                result.append("")
+                for disk in c.Win32_DiskDrive():
+                    result.append(f"Model: {disk.Model}")
+                    result.append(f"Size: {int(disk.Size) // (1024**3)} GB")
+                    result.append(f"Interface: {disk.InterfaceType}")
+                    result.append("")
+            except ImportError:
+                pass
+                
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil")
+        except Exception as e:
+            result.append(f"Error reading disk info: {str(e)}")
+        
+        output = "\n".join(result)
+        self.data_ready.emit("Disk Information", output)
+    
     def get_update_info(self):
-        """Get software update information"""
         result = []
         
         distro = self._detect_distro()
@@ -564,6 +858,11 @@ class SystemInfoWorker(QThread):
     
     def _detect_distro(self):
         """Detect the Linux distribution"""
+        if PlatformHelper.is_windows():
+            return "windows"
+        if PlatformHelper.is_macos():
+            return "macos"
+        
         try:
             with open("/etc/os-release", "r") as f:
                 content = f.read()
@@ -772,6 +1071,10 @@ class MiniToolsGUI(QMainWindow):
         super().__init__()
         
         self.setWindowTitle(__app_name__)
+        
+        # Set window icon
+        self._set_window_icon()
+        
         screen = self.screen().availableGeometry()
         screen_width = screen.width()
         screen_height = screen.height()
@@ -809,8 +1112,11 @@ class MiniToolsGUI(QMainWindow):
     
     def _auto_run_fetch_tool(self):
         """Auto-detect and run fastfetch/neofetch on startup"""
-        # Check for fastfetch first
-        if shutil.which("fastfetch"):
+        # On Windows, use built-in fastfetch
+        if PlatformHelper.is_windows():
+            self._run_builtin_fastfetch()
+        # On Linux/macOS, check for fastfetch first
+        elif shutil.which("fastfetch"):
             self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
             self.log("Running fastfetch", LogLevel.SUCCESS)
             self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
@@ -853,6 +1159,126 @@ class MiniToolsGUI(QMainWindow):
         except Exception as e:
             self.log(f"Error running {command}: {str(e)}", LogLevel.ERROR)
     
+    def _run_builtin_fastfetch(self):
+        """Run built-in fastfetch for Windows"""
+        try:
+            import platform
+            import psutil
+            import wmi
+            import datetime
+            
+            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
+            self.log("System Overview", LogLevel.SUCCESS)
+            self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
+            
+            # OS Info
+            self.log(f"OS: {platform.system()} {platform.release()}", LogLevel.INFO)
+            
+            # Kernel/Version
+            self.log(f"Kernel: {platform.version()}", LogLevel.INFO)
+            
+            # Uptime
+            boot_time = psutil.boot_time()
+            uptime_seconds = datetime.datetime.now().timestamp() - boot_time
+            uptime_days = int(uptime_seconds // 86400)
+            uptime_hours = int((uptime_seconds % 86400) // 3600)
+            uptime_minutes = int((uptime_seconds % 3600) // 60)
+            self.log(f"Uptime: {uptime_days}d {uptime_hours}h {uptime_minutes}m", LogLevel.INFO)
+            
+            # Hostname
+            self.log(f"Host: {platform.node()}", LogLevel.INFO)
+            
+            # Shell
+            self.log("Shell: Windows PowerShell / CMD", LogLevel.INFO)
+            
+            # Resolution
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                width = user32.GetSystemMetrics(0)
+                height = user32.GetSystemMetrics(1)
+                self.log(f"Resolution: {width}x{height}", LogLevel.INFO)
+            except:
+                pass
+            
+            # DE/WM
+            self.log("DE/WM: Windows Desktop", LogLevel.INFO)
+            
+            # Theme
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                apps_use_light_theme = winreg.QueryValueEx(key, "AppsUseLightTheme")[0]
+                theme = "Light" if apps_use_light_theme else "Dark"
+                self.log(f"Theme: {theme}", LogLevel.INFO)
+                winreg.CloseKey(key)
+            except:
+                pass
+            
+            # Terminal
+            self.log("Terminal: Windows Terminal", LogLevel.INFO)
+            
+            # CPU
+            c = wmi.WMI()
+            for cpu in c.Win32_Processor():
+                self.log(f"CPU: {cpu.Name}", LogLevel.INFO)
+                self.log(f"     Cores: {cpu.NumberOfCores} | Threads: {cpu.NumberOfLogicalProcessors}", LogLevel.INFO)
+                self.log(f"     Max Speed: {cpu.MaxClockSpeed / 1000:.2f} GHz", LogLevel.INFO)
+                break
+            
+            # GPU
+            for gpu in c.Win32_VideoController():
+                self.log(f"GPU: {gpu.Name}", LogLevel.INFO)
+                self.log(f"     VRAM: {int(gpu.AdapterRAM) // (1024**2)} MB", LogLevel.INFO)
+                break
+            
+            # Memory
+            mem = psutil.virtual_memory()
+            self.log(f"Memory: {mem.total // (1024**3)} GB", LogLevel.INFO)
+            self.log(f"       Used: {mem.used // (1024**3)} GB ({mem.percent:.1f}%)", LogLevel.INFO)
+            self.log(f"       Available: {mem.available // (1024**3)} GB", LogLevel.INFO)
+            
+            self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
+            
+        except ImportError as e:
+            self.log(f"Error: Required library not installed: {str(e)}", LogLevel.ERROR)
+            self.log("Please install: pip install psutil wmi", LogLevel.INFO)
+        except Exception as e:
+            self.log(f"Error running built-in fastfetch: {str(e)}", LogLevel.ERROR)
+    
+    def _set_window_icon(self):
+        """Set window icon for the application"""
+        try:
+            # For development mode, load icon from file
+            if not getattr(sys, 'frozen', False):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_path = None
+                
+                if PlatformHelper.is_windows():
+                    icon_path = os.path.join(script_dir, "minitools.ico")
+                elif PlatformHelper.is_macos():
+                    icon_path = os.path.join(script_dir, "minitools.icns")
+                else:
+                    # Linux: try .png or .svg
+                    if os.path.exists(os.path.join(script_dir, "minitools.png")):
+                        icon_path = os.path.join(script_dir, "minitools.png")
+                    elif os.path.exists(os.path.join(script_dir, "minitools.svg")):
+                        icon_path = os.path.join(script_dir, "minitools.svg")
+                
+                if icon_path and os.path.exists(icon_path):
+                    icon = QIcon(icon_path)
+                    self.setWindowIcon(icon)
+                    
+                    # Also set the application icon for Windows taskbar
+                    app = QApplication.instance()
+                    if app:
+                        app.setWindowIcon(icon)
+            # For compiled EXE, icon is embedded in the executable by PyInstaller
+            # No need to load it separately
+        except Exception as e:
+            # Fail silently - icon is not critical
+            pass
+    
     def center_window(self):
         """Center window on screen"""
         frame = self.frameGeometry()
@@ -877,7 +1303,16 @@ class MiniToolsGUI(QMainWindow):
         color = colors.get(level.value, colors[LogLevel.INFO.value])
         timestamp_color = colors["timestamp"]
         
-        formatted_message = f'<span style="color: {timestamp_color};">[{timestamp}]</span> <span style="color: {color}; font-size: {self.log_font_size}pt;">{message}</span>'
+        # Convert URLs to clickable links
+        import re
+        url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
+        message_with_links = re.sub(
+            url_pattern,
+            lambda m: f'<a href="{m.group(0)}" style="color: #4da6ff; text-decoration: underline;">{m.group(0)}</a>',
+            message
+        )
+        
+        formatted_message = f'<span style="color: {timestamp_color};">[{timestamp}]</span> <span style="color: {color}; font-size: {self.log_font_size}pt;">{message_with_links}</span>'
         
         # Save to history
         self.log_history.append((message, level.value))
@@ -944,40 +1379,57 @@ class MiniToolsGUI(QMainWindow):
     def show_about(self):
         """Show about information"""
         about_text = f"""
-MiniTools
-Version: {__version__}
-
-Dependencies:
-- Python 3.6+
-- PyQt6
-
-Author: {__author__}
-Repository: https://github.com/Perrolito/MiniTools.py
-
-License: GNU General Public License v3.0 (GPL-3.0)
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+MiniTools<br>
+Version: {__version__}<br>
+<br>
+Dependencies:<br>
+- Python 3.6+<br>
+- PyQt6<br>
+<br>
+Author: {__author__}<br>
+<br>
+License: GNU General Public License v3.0 (GPL-3.0)<br>
+<br>
+This program is free software: you can redistribute it and/or modify<br>
+it under the terms of the GNU General Public License as published by<br>
+the Free Software Foundation, either version 3 of the License, or<br>
+(at your option) any later version.<br>
+<br>
+This program is distributed in the hope that it will be useful,<br>
+but WITHOUT ANY WARRANTY; without even the implied warranty of<br>
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the<br>
+GNU General Public License for more details.<br>
+<br>
+You should have received a copy of the GNU General Public License<br>
+along with this program.  If not, see &lt;<a href="https://www.gnu.org/licenses/">https://www.gnu.org/licenses/</a>&gt;.
 """
         
-        QMessageBox.about(
-            self,
-            "About MiniTools",
-            about_text
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("About MiniTools")
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(about_text)
+        msg_box.setInformativeText(
+            'Repository: <a href="https://github.com/Perrolito/MiniTools.py">https://github.com/Perrolito/MiniTools.py</a>'
         )
+        msg_box.exec()
     
     def change_partition_uuid(self):
         """Change partition UUID"""
+        if PlatformHelper.is_windows():
+            self.log("\n" + "="*80, LogLevel.INFO)
+            self.log("Change Partition UUID - Not Available on Windows", LogLevel.WARNING)
+            self.log("="*80 + "\n", LogLevel.INFO)
+            self.log("This feature is not available on Windows.\n", LogLevel.INFO)
+            self.log("On Windows, you can use diskpart to manage disk IDs:\n", LogLevel.INFO)
+            self.log("1. Open Command Prompt as Administrator\n", LogLevel.INFO)
+            self.log("2. Run: diskpart\n", LogLevel.INFO)
+            self.log("3. Run: list disk\n", LogLevel.INFO)
+            self.log("4. Run: select disk X (replace X with disk number)\n", LogLevel.INFO)
+            self.log("5. Run: list partition\n", LogLevel.INFO)
+            self.log("6. Run: select partition Y (replace Y with partition number)\n", LogLevel.INFO)
+            self.log("7. Run: uniqueid disk\n", LogLevel.INFO)
+            return
+        
         self.log("\n" + "="*80, LogLevel.INFO)
         self.log("Change Partition UUID", LogLevel.WARNING)
         self.log("="*80 + "\n", LogLevel.INFO)
@@ -1231,9 +1683,14 @@ Please verify the information above is correct.
         
         if not os.path.exists(self.extensions_dir):
             self.log("Directory does not exist.", LogLevel.WARNING)
-            self.log(f"Create it with: mkdir -p {self.extensions_dir}", LogLevel.INFO)
-            self.log("", LogLevel.INFO)
+            if PlatformHelper.is_windows():
+                self.log(f"Create it in File Explorer: {self.extensions_dir}", LogLevel.INFO)
+            else:
+                self.log(f"Create it with: mkdir -p {self.extensions_dir}", LogLevel.INFO)
+        else:
+            self.log("Directory exists.", LogLevel.SUCCESS)
         
+        self.log("", LogLevel.INFO)
         self.log("How to add extensions:", LogLevel.INFO)
         self.log("1. Place .sh (shell) or .py (Python) scripts in the extensions directory", LogLevel.INFO)
         self.log("2. Restart MiniTools to see your extensions", LogLevel.INFO)
@@ -2246,10 +2703,11 @@ Please verify the information above is correct.
         
         log_layout.addWidget(zoom_toolbar)
         
-        self.log_text = QTextEdit()
+        self.log_text = QTextBrowser()
         self.log_text.setObjectName("logText")
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont(Config.LOG_FONT_FAMILY, self.log_font_size))
+        self.log_text.setOpenExternalLinks(True)  # 允许点击链接在外部浏览器打开
         screen = self.screen().availableGeometry()
         if screen.height() < 768:
             self.log_text.setMinimumHeight(150)
@@ -2293,25 +2751,33 @@ Please verify the information above is correct.
         container_layout.addWidget(system_group)
         
         # Maintenance Group
-        maintenance_group = self.create_button_group(
-            "System Maintenance",
-            [
-                ("Check System Updates", self.show_update_info, "Check for available system package updates"),
+        maintenance_buttons = [
+            ("Check System Updates", self.show_update_info, "Check for available system package updates"),
+            ("Install Package from File", self.install_package_from_file, "Install package from file"),
+        ]
+        
+        # Add Flatpak-related buttons only on Linux
+        if not PlatformHelper.is_windows():
+            maintenance_buttons.extend([
                 ("Check Flatpak Updates", self.show_flatpak_update_info, "Check for available Flatpak updates"),
                 ("Remove Unused Flatpak Runtimes", self.remove_unused_flatpak, "Remove unused Flatpak runtimes to free space"),
-                ("Install Package from File", self.install_package_from_file, "Install .deb, .rpm, or .pkg.tar.xz package file"),
-            ]
+            ])
+        
+        maintenance_group = self.create_button_group(
+            "System Maintenance",
+            maintenance_buttons
         )
         container_layout.addWidget(maintenance_group)
         
         # Disk Operations Group
-        disk_group = self.create_button_group(
-            "Disk Operations",
-            [
-                ("Change Partition UUID", self.change_partition_uuid, "Generate and change partition UUID"),
-            ]
-        )
-        container_layout.addWidget(disk_group)
+        if not PlatformHelper.is_windows():
+            disk_group = self.create_button_group(
+                "Disk Operations",
+                [
+                    ("Change Partition UUID", self.change_partition_uuid, "Generate and change partition UUID"),
+                ]
+            )
+            container_layout.addWidget(disk_group)
         
         # Extensions Group (dynamic)
         self.extensions_dir = Config.get_extensions_dir()
@@ -2349,7 +2815,7 @@ Please verify the information above is correct.
             extensions_group = self.create_button_group(
                 "Extensions",
                 [
-                    ("No extensions found", self.show_extensions_info, "Add .sh or .py scripts to ~/.config/hotodogo/minitools/extensions/"),
+                    ("No extensions found", self.show_extensions_info, f"Add .sh or .py scripts to {self.extensions_dir}"),
                 ]
             )
             container_layout.addWidget(extensions_group)
@@ -2362,7 +2828,20 @@ Please verify the information above is correct.
                 ("Clear iFlow History", self.clear_iflow_history, "Clear iFlow CLI command history"),
             ]
         )
-        container_layout.addWidget(iflow_group)
+        
+        # Only show iFlow CLI group if not on Windows (or show with Windows instructions)
+        if not PlatformHelper.is_windows():
+            container_layout.addWidget(iflow_group)
+        else:
+            # On Windows, show iFlow CLI with installation instructions
+            iflow_group_windows = self.create_button_group(
+                "iFlow CLI",
+                [
+                    ("Install iFlow CLI", self.install_iflow_cli, "Show iFlow CLI installation instructions for Windows"),
+                    ("Clear iFlow History", self.clear_iflow_history, "Show iFlow CLI history location on Windows"),
+                ]
+            )
+            container_layout.addWidget(iflow_group_windows)
         
         # About Group
         about_group = self.create_button_group(
@@ -2570,6 +3049,13 @@ Please verify the information above is correct.
     
     def remove_unused_flatpak(self):
         """Remove unused Flatpak runtimes"""
+        if PlatformHelper.is_windows():
+            self.log("\n" + "="*80, LogLevel.INFO)
+            self.log("Flatpak not supported on Windows", LogLevel.WARNING)
+            self.log("="*80 + "\n", LogLevel.INFO)
+            self.log("Flatpak is a Linux package format and is not available on Windows.\n", LogLevel.INFO)
+            return
+        
         self.log("\n" + "="*80, LogLevel.INFO)
         self.log("Removing unused Flatpak runtimes", LogLevel.WARNING)
         self.log("="*80 + "\n", LogLevel.INFO)
@@ -2629,12 +3115,49 @@ Please verify the information above is correct.
             self.log(f"\n✗ Error during operation: {str(e)}\n", LogLevel.ERROR)
     
     def install_package_from_file(self):
-        """Install package from file (.deb, .rpm, .pkg.tar.xz)"""
+        """Install package from file (.deb, .rpm, .pkg.tar.xz, .exe, .msi)"""
         self.log("\n" + "="*80, LogLevel.INFO)
         self.log("Install Package from File", LogLevel.WARNING)
         self.log("="*80 + "\n", LogLevel.INFO)
         
-        # 打开文件选择对话框
+        if PlatformHelper.is_windows():
+            # Windows: support .exe and .msi
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Package File",
+                str(Path.home()),
+                "Package Files (*.exe *.msi);;All Files (*)"
+            )
+            
+            if not file_path:
+                self.log("No file selected. Operation cancelled.\n", LogLevel.INFO)
+                return
+            
+            self.log(f"Selected file: {file_path}\n", LogLevel.INFO)
+            
+            file_ext = Path(file_path).suffix.lower()
+            
+            if file_ext == '.exe':
+                self.log(f"Running installer: {file_path}\n", LogLevel.WARNING)
+                try:
+                    import subprocess
+                    subprocess.Popen([file_path], shell=True)
+                    self.log("✓ Installer started successfully.\n", LogLevel.SUCCESS)
+                except Exception as e:
+                    self.log(f"✗ Failed to start installer: {str(e)}\n", LogLevel.ERROR)
+            elif file_ext == '.msi':
+                self.log(f"Running MSI installer: {file_path}\n", LogLevel.WARNING)
+                try:
+                    subprocess.Popen(['msiexec', '/i', file_path], shell=True)
+                    self.log("✓ Installer started successfully.\n", LogLevel.SUCCESS)
+                except Exception as e:
+                    self.log(f"✗ Failed to start installer: {str(e)}\n", LogLevel.ERROR)
+            else:
+                self.log(f"✗ Unsupported package format: {file_ext}\n", LogLevel.ERROR)
+                self.log("Supported formats on Windows: .exe, .msi\n", LogLevel.INFO)
+            return
+        
+        # Linux/macOS: support .deb, .rpm, .pkg.tar.xz
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Package File",
@@ -2810,7 +3333,14 @@ Please verify the information above is correct.
         distro = self._detect_distro()
         command = []
         
-        if distro in ["ubuntu", "debian", "mint", "pop", "zorin", "elementary"]:
+        if PlatformHelper.is_windows():
+            self.log("Windows Updates must be run through Windows Update Settings.\n", LogLevel.INFO)
+            self.log("Press Win + I to open Settings, then go to Windows Update.\n", LogLevel.INFO)
+            return
+        elif PlatformHelper.is_macos():
+            self.log("macOS updates must be run through System Settings > Software Update.\n", LogLevel.INFO)
+            return
+        elif distro in ["ubuntu", "debian", "mint", "pop", "zorin", "elementary"]:
             command = ["pkexec", "sh", "-c", "apt update && apt upgrade -y"]
         elif distro in ["fedora", "nobara", "rhel", "centos", "almalinux", "rocky"]:
             command = ["pkexec", "sh", "-c", "dnf upgrade -y"]
@@ -2922,10 +3452,17 @@ Please verify the information above is correct.
         self.log("="*80 + "\n", LogLevel.INFO)
         
         # 显示确认对话框
+        if PlatformHelper.is_windows():
+            install_command = "irm https://gitee.com/iflow-ai/iflow-cli/raw/main/install.ps1 | iex"
+            message = "This will download and install iFlow CLI using PowerShell.\n\nCommand:\n" + install_command + "\n\nDo you want to continue?"
+        else:
+            install_script_url = "https://gitee.com/iflow-ai/iflow-cli/raw/main/install.sh"
+            message = "This will download and install iFlow CLI from:\n" + install_script_url + "\n\nDo you want to continue?"
+        
         reply = QMessageBox.question(
             self,
             "Install iFlow CLI",
-            "This will download and install iFlow CLI from:\nhttps://gitee.com/iflow-ai/iflow-cli/raw/main/install.sh\n\nDo you want to continue?",
+            message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -2934,106 +3471,171 @@ Please verify the information above is correct.
             self.log("Installation cancelled.\n", LogLevel.INFO)
             return
         
-        self.log("Downloading iFlow CLI installer...", LogLevel.INFO)
-        
-        install_script_url = "https://gitee.com/iflow-ai/iflow-cli/raw/main/install.sh"
-        temp_dir = tempfile.mkdtemp()
-        install_script_path = os.path.join(temp_dir, "install.sh")
-        
-        try:
-            # Download install script
-            import urllib.request
-            urllib.request.urlretrieve(install_script_url, install_script_path)
-            self.log("Download completed successfully.\n", LogLevel.SUCCESS)
+        if PlatformHelper.is_windows():
+            # Windows: 使用 npm 安装
+            self.log("Installing iFlow CLI using npm...\n", LogLevel.WARNING)
             
-            # Make script executable
-            os.chmod(install_script_path, 0o755)
-            
-            # Run install script
-            self.log("Running iFlow CLI installer...\n", LogLevel.WARNING)
-            
-            process = subprocess.Popen(
-                ["bash", install_script_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
-            
-            def read_output():
-                while True:
-                    output = process.stdout.readline()
-                    if output == '' and process.poll() is not None:
-                        break
-                    if output:
-                        self.log(output.strip(), LogLevel.INFO)
-                        QApplication.processEvents()
-            
-            import threading
-            output_thread = threading.Thread(target=read_output)
-            output_thread.daemon = True
-            output_thread.start()
-            
-            return_code = process.wait()
-            output_thread.join(timeout=2)
-            
-            # Cleanup
-            import shutil
-            shutil.rmtree(temp_dir)
-            
-            if return_code == 0:
-                self.log("\n✓ iFlow CLI installed successfully!\n", LogLevel.SUCCESS)
-                self.log("You can now use 'iflow' command in your terminal.\n", LogLevel.INFO)
-            else:
-                self.log(f"\n✗ Installation failed, error code: {return_code}\n", "error")
+            try:
+                # 先检查 Node.js 是否已安装
+                self.log("Checking for Node.js...", LogLevel.INFO)
+                check_process = subprocess.run(
+                    ["node", "--version"],
+                    capture_output=True,
+                    text=True
+                )
                 
-        except Exception as e:
-            self.log(f"\n✗ Error during installation: {str(e)}\n", LogLevel.ERROR)
-            # Cleanup on error
-            import shutil
-            if os.path.exists(temp_dir):
+                if check_process.returncode != 0:
+                    self.log("✗ Node.js not found!\n", LogLevel.ERROR)
+                    self.log("iFlow CLI requires Node.js on Windows.\n", LogLevel.INFO)
+                    self.log("Please install Node.js first:\n", LogLevel.INFO)
+                    self.log("1. Visit: https://nodejs.org/zh-cn/download\n", LogLevel.INFO)
+                    self.log("2. Download and install Node.js\n", LogLevel.INFO)
+                    self.log("3. Restart this application and try again\n", LogLevel.INFO)
+                    return
+                
+                self.log(f"✓ Node.js {check_process.stdout.strip()} found\n", LogLevel.SUCCESS)
+                
+                # 使用 npm 安装 iFlow CLI
+                self.log("Installing iFlow CLI via npm...\n", LogLevel.INFO)
+                
+                process = subprocess.Popen(
+                    ["npm", "install", "-g", "@iflow-ai/iflow-cli@latest"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                def read_output():
+                    while True:
+                        output = process.stdout.readline()
+                        if output == '' and process.poll() is not None:
+                            break
+                        if output:
+                            self.log(output.strip(), LogLevel.INFO)
+                            QApplication.processEvents()
+                
+                import threading
+                output_thread = threading.Thread(target=read_output)
+                output_thread.daemon = True
+                output_thread.start()
+                
+                return_code = process.wait()
+                output_thread.join(timeout=30)
+                
+                if return_code == 0:
+                    self.log("\n✓ iFlow CLI installed successfully!\n", LogLevel.SUCCESS)
+                    self.log("You can now use 'iflow' command in PowerShell.\n", LogLevel.INFO)
+                    
+                    # 验证安装
+                    verify_process = subprocess.run(
+                        ["iflow", "--version"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if verify_process.returncode == 0:
+                        self.log(f"✓ Verified: iFlow CLI {verify_process.stdout.strip()}\n", LogLevel.SUCCESS)
+                else:
+                    self.log(f"\n✗ Installation failed, error code: {return_code}\n", LogLevel.ERROR)
+                    
+            except FileNotFoundError:
+                self.log("✗ npm command not found!\n", LogLevel.ERROR)
+                self.log("Please install Node.js from: https://nodejs.org/zh-cn/download\n", LogLevel.INFO)
+            except Exception as e:
+                self.log(f"\n✗ Error during installation: {str(e)}\n", LogLevel.ERROR)
+        else:
+            # Linux/macOS: 使用 bash 脚本安装
+            self.log("Downloading iFlow CLI installer...", LogLevel.INFO)
+            
+            install_script_url = "https://gitee.com/iflow-ai/iflow-cli/raw/main/install.sh"
+            temp_dir = tempfile.mkdtemp()
+            install_script_path = os.path.join(temp_dir, "install.sh")
+            
+            try:
+                # Download install script
+                import urllib.request
+                urllib.request.urlretrieve(install_script_url, install_script_path)
+                self.log("Download completed successfully.\n", LogLevel.SUCCESS)
+                
+                # Make script executable
+                os.chmod(install_script_path, 0o755)
+                
+                # Run install script
+                self.log("Running iFlow CLI installer...\n", LogLevel.WARNING)
+                
+                process = subprocess.Popen(
+                    ["bash", install_script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                def read_output():
+                    while True:
+                        output = process.stdout.readline()
+                        if output == '' and process.poll() is not None:
+                            break
+                        if output:
+                            self.log(output.strip(), LogLevel.INFO)
+                            QApplication.processEvents()
+                
+                import threading
+                output_thread = threading.Thread(target=read_output)
+                output_thread.daemon = True
+                output_thread.start()
+                
+                return_code = process.wait()
+                output_thread.join(timeout=2)
+                
+                # Cleanup
+                import shutil
                 shutil.rmtree(temp_dir)
+                
+                if return_code == 0:
+                    self.log("\n✓ iFlow CLI installed successfully!\n", LogLevel.SUCCESS)
+                    self.log("You can now use 'iflow' command in your terminal.\n", LogLevel.INFO)
+                else:
+                    self.log(f"\n✗ Installation failed, error code: {return_code}\n", LogLevel.ERROR)
+                    
+            except Exception as e:
+                self.log(f"\n✗ Error during installation: {str(e)}\n", LogLevel.ERROR)
+                # Cleanup on error
+                import shutil
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
     
     def clear_iflow_history(self):
         """Clear iFlow CLI command history"""
         self.log("\n" + "="*80, LogLevel.INFO)
-        self.log("Clear iFlow History", LogLevel.WARNING)
+        self.log("Clear iFlow CLI Command History", LogLevel.WARNING)
         self.log("="*80 + "\n", LogLevel.INFO)
         
-        iflow_history_dir = os.path.expanduser("~/.iflow/history")
+        if PlatformHelper.is_windows():
+            # Windows
+            appdata = os.environ.get('APPDATA')
+            if not appdata:
+                home = os.path.expanduser('~')
+                appdata = os.path.join(home, 'AppData', 'Roaming')
+            iflow_dir = os.path.join(appdata, 'iflow')
+            history_dir = os.path.join(iflow_dir, 'history')
+        else:
+            # Linux and macOS use the same path
+            iflow_dir = os.path.expanduser("~/.iflow")
+            history_dir = os.path.join(iflow_dir, 'history')
         
-        if not os.path.exists(iflow_history_dir):
-            self.log("iFlow history directory does not exist.\n", LogLevel.WARNING)
+        if not os.path.exists(history_dir):
+            self.log(f"History directory not found: {history_dir}\n", LogLevel.INFO)
+            self.log("iFlow CLI history does not exist or has already been cleared.\n", LogLevel.SUCCESS)
             return
         
-        # List files to be deleted
-        history_files = []
-        try:
-            for item in os.listdir(iflow_history_dir):
-                item_path = os.path.join(iflow_history_dir, item)
-                if os.path.isfile(item_path):
-                    history_files.append(item)
-        except Exception as e:
-            self.log(f"Error listing history files: {str(e)}\n", LogLevel.ERROR)
-            return
-        
-        if not history_files:
-            self.log("No history files found.\n", LogLevel.INFO)
-            return
-        
-        self.log(f"Found {len(history_files)} history file(s):\n", LogLevel.INFO)
-        for file in history_files[:10]:
-            self.log(f"  - {file}", LogLevel.INFO)
-        if len(history_files) > 10:
-            self.log(f"  ... and {len(history_files) - 10} more files", LogLevel.INFO)
-        self.log("")
-        
-        # Show confirmation dialog
+        # 显示确认对话框
         reply = QMessageBox.question(
             self,
-            "Clear iFlow History",
-            f"This will delete {len(history_files)} history file(s) from:\n{iflow_history_dir}\n\nThis action cannot be undone.\n\nDo you want to continue?",
+            "Clear iFlow CLI History",
+            f"This will clear the iFlow CLI command history directory:\n{history_dir}\n\nAll history files will be deleted.\nDo you want to continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -3042,35 +3644,47 @@ Please verify the information above is correct.
             self.log("Operation cancelled.\n", LogLevel.INFO)
             return
         
-        # Delete history files
-        deleted_count = 0
-        errors = []
-        
         try:
-            for item in history_files:
-                item_path = os.path.join(iflow_history_dir, item)
-                try:
+            # Delete all files and subdirectories in the history directory
+            import shutil
+            deleted_count = 0
+            for item in os.listdir(history_dir):
+                item_path = os.path.join(history_dir, item)
+                if os.path.isfile(item_path):
                     os.remove(item_path)
                     deleted_count += 1
-                    self.log(f"Deleted: {item}", LogLevel.SUCCESS)
-                except Exception as e:
-                    errors.append(f"{item}: {str(e)}")
-                    self.log(f"Error deleting {item}: {str(e)}", LogLevel.ERROR)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    deleted_count += 1
+            
+            self.log(f"✓ History directory cleared: {history_dir}\n", LogLevel.SUCCESS)
+            self.log(f"Deleted {deleted_count} item(s) from iFlow CLI history.\n", LogLevel.INFO)
+            self.log("iFlow CLI command history has been cleared.\n", LogLevel.INFO)
+            
+        except PermissionError:
+            self.log(f"✗ Permission denied: Cannot access {history_dir}\n", LogLevel.ERROR)
+            self.log("Try running the application as administrator.\n", LogLevel.INFO)
         except Exception as e:
-            self.log(f"Error clearing history: {str(e)}\n", LogLevel.ERROR)
-            return
-        
-        self.log("")
-        if deleted_count > 0:
-            self.log(f"✓ Successfully deleted {deleted_count} history file(s).\n", LogLevel.SUCCESS)
-        if errors:
-            self.log(f"✗ Failed to delete {len(errors)} file(s).\n", LogLevel.ERROR)
+            self.log(f"✗ Error clearing history directory: {str(e)}\n", LogLevel.ERROR)
 
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Mini Tools")
     app.setOrganizationName("Mini Tools")
+    
+    # Set application icon for Windows taskbar
+    # For development mode, load icon from file
+    # For compiled EXE, icon is embedded by PyInstaller
+    if not getattr(sys, 'frozen', False):
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(script_dir, "minitools.ico")
+            if os.path.exists(icon_path):
+                app.setWindowIcon(QIcon(icon_path))
+        except Exception:
+            pass
+    
     window = MiniToolsGUI()
     window.show()
     
