@@ -27,7 +27,10 @@ set "APP_SCRIPT_PATH=%PROJECT_ROOT%\%APP_PYTHON_SCRIPT%"
 set "APP_ICON_PATH=%PROJECT_ROOT%\%APP_ICON%"
 
 REM Extract version from Python script
-for /f "tokens=2 delims==" %%V in ('type "%APP_SCRIPT_PATH%" ^| findstr /C:"__version__"') do set "VERSION=%%~V"
+for /f "tokens=2 delims==" %%V in ('type "%APP_SCRIPT_PATH%" ^| findstr /C:"__version__"') do set "VERSION=%%V"
+REM Remove quotes and extra spaces from version
+set "VERSION=%VERSION:"=%"
+for /f "tokens=* delims= " %%a in ("%VERSION%") do set "VERSION=%%a"
 if "%VERSION%"=="" (
     echo [WARNING] Failed to extract version from script, using default
     set "VERSION=1.0.0"
