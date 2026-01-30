@@ -22,6 +22,10 @@ set "APP_PKG_NAME=minitools"
 set "APP_PYTHON_SCRIPT=MiniTools.py"
 set "APP_ICON=minitools.png"
 
+REM Path definitions
+set "APP_SCRIPT_PATH=%PROJECT_ROOT%\%APP_PYTHON_SCRIPT%"
+set "APP_ICON_PATH=%PROJECT_ROOT%\%APP_ICON%"
+
 REM Extract version from Python script
 for /f "tokens=2 delims==" %%V in ('type "%APP_SCRIPT_PATH%" ^| findstr /C:"__version__"') do set "VERSION=%%~V"
 if "%VERSION%"=="" (
@@ -35,10 +39,6 @@ set "BUILD_DIR=%PROJECT_ROOT%\build"
 
 REM Dist directory for final packages
 set "DIST_DIR=%PROJECT_ROOT%\dist"
-
-REM Path definitions
-set "APP_SCRIPT_PATH=%PROJECT_ROOT%\%APP_PYTHON_SCRIPT%"
-set "APP_ICON_PATH=%PROJECT_ROOT%\%APP_ICON%"
 
 REM Architecture detection
 set "ARCH=%PROCESSOR_ARCHITECTURE%"
