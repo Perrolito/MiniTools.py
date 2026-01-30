@@ -33,6 +33,9 @@ echo [INFO] Detected version: %VERSION%
 REM Build directory
 set "BUILD_DIR=%PROJECT_ROOT%\build"
 
+REM Dist directory for final packages
+set "DIST_DIR=%PROJECT_ROOT%\dist"
+
 REM Path definitions
 set "APP_SCRIPT_PATH=%PROJECT_ROOT%\%APP_PYTHON_SCRIPT%"
 set "APP_ICON_PATH=%PROJECT_ROOT%\%APP_ICON%"
@@ -61,6 +64,11 @@ REM Create build directory
 if not exist "%BUILD_DIR%" (
     echo [INFO] Creating build directory...
     mkdir "%BUILD_DIR%"
+)
+
+if not exist "%DIST_DIR%" (
+    echo [INFO] Creating dist directory...
+    mkdir "%DIST_DIR%"
 )
 
 REM Check for Python
@@ -100,6 +108,18 @@ if errorlevel 1 (
         exit /b 1
     )
 )
+
+REM Create build directory
+
+if not exist "%BUILD_DIR%" (
+
+    echo [INFO] Creating build directory...
+
+    mkdir "%BUILD_DIR%"
+
+)
+
+
 
 REM Check for psutil (needed for system info on Windows)
 echo [INFO] Checking for psutil...
@@ -141,7 +161,7 @@ if errorlevel 1 (
 )
 
 REM Setup paths
-set "WINDOWS_OUTPUT=%BUILD_DIR%\%APP_PKG_NAME%-%VERSION%-%ARCH_SUFFIX%-self-contained.exe"
+set "WINDOWS_OUTPUT=%DIST_DIR%\%APP_PKG_NAME%-%VERSION%-%ARCH_SUFFIX%-self-contained.exe"
 
 REM Clean up previous build
 echo [INFO] Cleaning up previous Windows build artifacts...

@@ -30,6 +30,9 @@ APP_ICON="minitools.png"
 # Build directory
 BUILD_DIR="${PROJECT_ROOT}/build"
 
+# Dist directory for final packages
+DIST_DIR="${PROJECT_ROOT}/dist"
+
 # Path definitions
 APP_SCRIPT_PATH="${PROJECT_ROOT}/${APP_PYTHON_SCRIPT}"
 APP_ICON_PATH="${PROJECT_ROOT}/${APP_ICON}"
@@ -410,6 +413,9 @@ print_success "Building MiniTools version: $VERSION"
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
+# Create dist directory for final packages
+mkdir -p "$DIST_DIR"
+
 # ============================================================================
 # Interactive Menu (if needed)
 # ============================================================================
@@ -600,7 +606,7 @@ echo ""
 # ============================================================================
 
 if [ "$BUILD_DEB" = "true" ]; then
-    print_header "Building DEB Package"
+        print_header "Building DEB Package"
     
     if check_command dpkg-deb; then
         print_success "✓ dpkg-deb found"
@@ -612,42 +618,41 @@ if [ "$BUILD_DEB" = "true" ]; then
     
     if [ "$BUILD_DEB" = "true" ]; then
         # Setup paths
-        DEB_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.deb"
-        DEB_DIR="${BUILD_DIR}/${APP_PKG_NAME}_${VERSION}_${ARCH_SUFFIX}"
+        DEB_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}_${VERSION}_${ARCH_SUFFIX}.deb"
+        DEB_WORKDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-deb"
         DEB_INSTALL_DIR="/opt/${APP_PKG_NAME}"
         
         # Clean up previous build
         print_info "Cleaning up previous DEB build artifacts..."
-        rm -rf "$DEB_DIR"
-        rm -f "$DEB_OUTPUT"
+        rm -rf "$DEB_WORKDIR"        rm -f "$DEB_OUTPUT"
         
         # Create directory structure
-        mkdir -p "${DEB_DIR}/DEBIAN"
-        mkdir -p "${DEB_DIR}${DEB_INSTALL_DIR}"
-        mkdir -p "${DEB_DIR}/usr/share/applications"
-        mkdir -p "${DEB_DIR}/usr/share/pixmaps"
-        mkdir -p "${DEB_DIR}/usr/bin"
+        mkdir -p "${DEB_WORKDIR}/DEBIAN"
+        mkdir -p "${DEB_WORKDIR}${DEB_INSTALL_DIR}"
+        mkdir -p "${DEB_WORKDIR}/usr/share/applications"
+        mkdir -p "${DEB_WORKDIR}/usr/share/pixmaps"
+        mkdir -p "${DEB_WORKDIR}/usr/bin"
         
         # Copy application files
-        cp "$APP_SCRIPT_PATH" "${DEB_DIR}${DEB_INSTALL_DIR}/${APP_PYTHON_SCRIPT}"
-        chmod +x "${DEB_DIR}${DEB_INSTALL_DIR}/${APP_PYTHON_SCRIPT}"
+        cp "$APP_SCRIPT_PATH" "${DEB_WORKDIR}${DEB_INSTALL_DIR}/${APP_PYTHON_SCRIPT}"
+        chmod +x "${DEB_WORKDIR}${DEB_INSTALL_DIR}/${APP_PYTHON_SCRIPT}"
         
         # Copy icon
         if [ -f "$APP_ICON_PATH" ]; then
-            cp "$APP_ICON_PATH" "${DEB_DIR}/usr/share/pixmaps/${APP_PKG_NAME}.png"
+            cp "$APP_ICON_PATH" "${DEB_WORKDIR}/usr/share/pixmaps/${APP_PKG_NAME}.png"
             print_success "✓ Icon copied"
         fi
         
         # Create launcher script
-        cat > "${DEB_DIR}/usr/bin/${APP_PKG_NAME}" << EOF
+        cat > "${DEB_WORKDIR}/usr/bin/${APP_PKG_NAME}" << EOF
 #!/bin/bash
 cd ${DEB_INSTALL_DIR}
 python3 ${APP_PYTHON_SCRIPT} "\$@"
 EOF
-        chmod +x "${DEB_DIR}/usr/bin/${APP_PKG_NAME}"
+        chmod +x "${DEB_WORKDIR}/usr/bin/${APP_PKG_NAME}"
         
         # Create desktop entry
-        cat > "${DEB_DIR}/usr/share/applications/${APP_PKG_NAME}.desktop" << EOF
+        cat > "${DEB_WORKDIR}/usr/share/applications/${APP_PKG_NAME}.desktop" << EOF
 [Desktop Entry]
 Name=$APP_NAME
 Comment=System Information and Maintenance Tools
@@ -660,7 +665,7 @@ Keywords=system;monitor;maintenance;
 EOF
         
         # Create control file
-        cat > "${DEB_DIR}/DEBIAN/control" << EOF
+        cat > "${DEB_WORKDIR}/DEBIAN/control" << EOF
 Package: ${APP_PKG_NAME}
 Version: ${VERSION}
 Architecture: ${ARCH_SUFFIX}
@@ -677,7 +682,7 @@ Depends: python3, python3-pyqt6
 EOF
         
         # Build DEB
-        dpkg-deb --build "$DEB_DIR" "$DEB_OUTPUT" 2>&1
+        dpkg-deb --build "$DEB_WORKDIR" "$DEB_OUTPUT" 2>&1
         if [ -f "$DEB_OUTPUT" ]; then
             print_success "✓ DEB package created: $DEB_OUTPUT"
         else
@@ -703,14 +708,15 @@ if [ "$BUILD_RPM" = "true" ]; then
     
     if [ "$BUILD_RPM" = "true" ]; then
         # Setup paths
-        RPM_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.rpm"
+        RPM_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.rpm"
+        RPM_WORKDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-rpm"
         
         # Create rpmbuild directory structure
-        mkdir -p "${BUILD_DIR}/rpmbuild/BUILD" "${BUILD_DIR}/rpmbuild/RPMS" "${BUILD_DIR}/rpmbuild/SOURCES" "${BUILD_DIR}/rpmbuild/SPECS" "${BUILD_DIR}/rpmbuild/SRPMS"
-        RPM_RPMS_DIR="${BUILD_DIR}/rpmbuild/RPMS/${RPM_ARCH}"
+        mkdir -p "${RPM_WORKDIR}/BUILD" "${RPM_WORKDIR}/RPMS" "${RPM_WORKDIR}/SOURCES" "${RPM_WORKDIR}/SPECS" "${RPM_WORKDIR}/SRPMS"
+        RPM_RPMS_DIR="${RPM_WORKDIR}/RPMS/${RPM_ARCH}"
         
         # Create spec file
-        cat > "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" << EOF
+        cat > "${RPM_WORKDIR}/SPECS/${APP_PKG_NAME}.spec" << EOF
 Name:           ${APP_PKG_NAME}
 Version:        ${VERSION}
 Release:        1%{?dist}
@@ -771,13 +777,13 @@ DESKTOP
 EOF
         
         # Create source tarball
-        mkdir -p "${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}"
-        cp "$APP_SCRIPT_PATH" "${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}/"
-        tar -czf "${BUILD_DIR}/rpmbuild/SOURCES/${APP_PKG_NAME}-${VERSION}.tar.gz" -C "${BUILD_DIR}" "${APP_PKG_NAME}-${VERSION}"
+        mkdir -p "${RPM_WORKDIR}/${APP_PKG_NAME}-${VERSION}"
+        cp "$APP_SCRIPT_PATH" "${RPM_WORKDIR}/${APP_PKG_NAME}-${VERSION}/"
+        tar -czf "${RPM_WORKDIR}/SOURCES/${APP_PKG_NAME}-${VERSION}.tar.gz" -C "${RPM_WORKDIR}" "${APP_PKG_NAME}-${VERSION}"
         
         # Build RPM
-        rpmbuild_topdir="${BUILD_DIR}/rpmbuild"
-        rpmbuild -ba "${BUILD_DIR}/rpmbuild/SPECS/${APP_PKG_NAME}.spec" --define "_topdir ${rpmbuild_topdir}" 2>&1
+        rpmbuild_topdir="${RPM_WORKDIR}"
+        rpmbuild -ba "${RPM_WORKDIR}/SPECS/${APP_PKG_NAME}.spec" --define "_topdir ${rpmbuild_topdir}" 2>&1
         
         # Find and copy the built RPM (file may include dist info like .fc43)
         RPM_FILE=$(find "${RPM_RPMS_DIR}" -name "${APP_PKG_NAME}-${VERSION}-1.*.${RPM_ARCH}.rpm" 2>/dev/null | head -1)
@@ -814,7 +820,7 @@ if [ "$BUILD_APPIMAGE" = "true" ]; then
         # Setup paths
         WORKDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-appimage"
         APPDIR="${WORKDIR}/AppDir"
-        APPIMAGE_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.AppImage"
+        APPIMAGE_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.AppImage"
         APPIMAGETOOL=$(find_appimagetool)
         APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
         
@@ -951,7 +957,7 @@ if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
     if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
         # Setup paths
         SELF_CONTAINED_APPDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained-appimage"
-        SELF_CONTAINED_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained.AppImage"
+        SELF_CONTAINED_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained.AppImage"
         PYINSTALLER_DIR="${SELF_CONTAINED_APPDIR}/pyinstaller"
         APPDIR="${SELF_CONTAINED_APPDIR}/AppDir"
         
@@ -1061,8 +1067,8 @@ if [ "$BUILD_MACOS" = "true" ]; then
     if [ "$BUILD_MACOS" = "true" ]; then
         # Setup paths
         MACOS_APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
-        MACOS_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.app"
-        DMG_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.dmg"
+        MACOS_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.app"
+        DMG_OUTPUT="${DIST_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.dmg"
         ICNS_FILE="${BUILD_DIR}/${APP_PKG_NAME}.icns"
         
         # Clean up previous build
