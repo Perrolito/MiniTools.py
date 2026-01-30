@@ -1349,7 +1349,9 @@ class SystemInfoWorker(QThread):
             check_cmd = subprocess.run(
                 ["winget", "--version"],
                 capture_output=True,
-                text=True
+                text=True,
+                encoding="utf-8",
+                errors="ignore"
             )
             
             if check_cmd.returncode == 0:
@@ -1362,7 +1364,9 @@ class SystemInfoWorker(QThread):
                 update_cmd = subprocess.run(
                     ["winget", "upgrade", "--include-unknown", "--accept-source-agreements"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    encoding="utf-8",
+                    errors="ignore"
                 )
                 
                 if update_cmd.returncode == 0:
@@ -1403,7 +1407,9 @@ class SystemInfoWorker(QThread):
                 choco_check = subprocess.run(
                     ["choco", "--version"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    encoding="utf-8",
+                    errors="ignore"
                 )
                 
                 if choco_check.returncode == 0:
@@ -1414,7 +1420,9 @@ class SystemInfoWorker(QThread):
                     outdated_cmd = subprocess.run(
                         ["choco", "outdated"],
                         capture_output=True,
-                        text=True
+                        text=True,
+                        encoding="utf-8",
+                        errors="ignore"
                     )
                     
                     if outdated_cmd.returncode == 0:
@@ -3373,7 +3381,7 @@ Please verify the information above is correct.
             else:
                 self.log("Update operation cancelled.\n", LogLevel.INFO)
         else:
-            self.log("\nSystem is up to date, no updates available.\n", "success")
+            self.log("\nSystem is up to date, no updates available.\n", LogLevel.SUCCESS)
     
     def _display_info_with_flatpak_update_option(self, title, content):
         """Display Flatpak update information with update option"""
