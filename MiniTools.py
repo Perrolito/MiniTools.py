@@ -1393,7 +1393,7 @@ class MiniToolsGUI(QMainWindow):
             self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
             self.log("Running fastfetch", LogLevel.SUCCESS)
             self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", LogLevel.INFO)
-            self._run_fetch_command("fastfetch", "--pipe", "--structure", "title:separator:os:kernel:uptime:packages:shell:resolution:de:wm:theme:terminal:cpu:gpu:memory")
+            self._run_fetch_command("fastfetch", "--pipe", "--structure", "title:separator:os:kernel:uptime:packages:shell:resolution:de:wm:theme:terminal:cpu:gpu:memory", "--logo", "none")
         # Check for neofetch as fallback
         elif shutil.which("neofetch"):
             self.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", LogLevel.INFO)
