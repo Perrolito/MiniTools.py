@@ -290,10 +290,13 @@ class SystemInfoWorker(QThread):
     
     def run(self):
         """Execute the appropriate info handler based on info_type"""
-        # Check platform support
+        # Windows support
         if PlatformHelper.is_windows() and self.info_type in ["update", "flatpak"]:
-            self.error_signal.emit("This feature is not supported on Windows")
-            return
+            if self.info_type == "flatpak":
+                self.error_signal.emit("This feature is not supported on Windows")
+                return
+            # Windows updates are supported
+            pass
         if PlatformHelper.is_windows() and self.info_type in ["cpu", "memory", "kernel", "swap", "disk"]:
             handler = self.INFO_HANDLERS.get(f"{self.info_type}_windows")
             if handler:
@@ -1067,7 +1070,9 @@ class SystemInfoWorker(QThread):
         
         distro = self._detect_distro()
         
-        if distro in ["ubuntu", "debian", "mint", "pop", "zorin", "elementary"]:
+        if distro == "windows":
+            result = self._get_windows_updates()
+        elif distro in ["ubuntu", "debian", "mint", "pop", "zorin", "elementary"]:
             result = self._get_apt_updates()
         elif distro in ["fedora", "nobara", "rhel", "centos"]:
             result = self._get_dnf_updates()
@@ -1330,6 +1335,126 @@ class SystemInfoWorker(QThread):
             
         except subprocess.CalledProcessError:
             result.append("Error: Unable to check for updates.")
+        except Exception as e:
+            result.append(f"Error: {str(e)}")
+        
+        return result
+    
+    def _get_windows_updates(self):
+        """Get updates for Windows systems using winget"""
+        result = []
+        
+        try:
+            # Check if winget is available
+            check_cmd = subprocess.run(
+                ["winget", "--version"],
+                capture_output=True,
+                text=True
+            )
+            
+            if check_cmd.returncode == 0:
+                result.append("Checking for updates (winget)...")
+                result.append("")
+                result.append(f"winget version: {check_cmd.stdout.strip()}")
+                result.append("")
+                
+                # Get list of available updates
+                update_cmd = subprocess.run(
+                    ["winget", "upgrade", "--include-unknown", "--accept-source-agreements"],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if update_cmd.returncode == 0:
+                    output = update_cmd.stdout
+                    if "No upgrade found" in output or output.strip() == "":
+                        result.append("No updates available.")
+                    else:
+                        # Parse output to get package list
+                        lines = output.split("\n")
+                        packages = []
+                        for line in lines:
+                            if line.strip() and not line.startswith("-") and not line.startswith(" ") and not "Name" in line and not "Id" in line:
+                                # Skip header and separator lines
+                                if any(char in line for char in ["[", "]"]):
+                                    packages.append(line.strip())
+                        
+                        if packages:
+                            result.append(f"Available updates: {len(packages)}")
+                            result.append("")
+                            for pkg in packages[:50]:
+                                result.append(pkg)
+                            if len(packages) > 50:
+                                result.append(f"... and {len(packages) - 50} more packages")
+                            result.append("")
+                            result.append("")
+                            result.append("To update, run:")
+                            result.append("  winget upgrade --all")
+                        else:
+                            result.append("No updates available.")
+                else:
+                    result.append("Error: Unable to check for updates.")
+                    
+            else:
+                # winget not available, try chocolatey
+                result.append("winget not found. Checking for chocolatey...")
+                result.append("")
+                
+                choco_check = subprocess.run(
+                    ["choco", "--version"],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if choco_check.returncode == 0:
+                    result.append(f"chocolatey version: {choco_check.stdout.strip()}")
+                    result.append("")
+                    
+                    # Get list of available updates
+                    outdated_cmd = subprocess.run(
+                        ["choco", "outdated"],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if outdated_cmd.returncode == 0:
+                        output = outdated_cmd.stdout
+                        if "upgrades available" in output:
+                            result.append("Available updates:")
+                            for line in output.split("\n"):
+                                if line.strip() and not line.startswith("upgrades"):
+                                    result.append(line.strip())
+                            result.append("")
+                            result.append("")
+                            result.append("To update, run:")
+                            result.append("  choco upgrade all")
+                        else:
+                            result.append("No updates available.")
+                    else:
+                        result.append("Error: Unable to check for updates.")
+                else:
+                    result.append("winget and chocolatey not found.")
+                    result.append("")
+                    result.append("To install winget:")
+                    result.append("  Download from Microsoft Store or Microsoft website")
+                    result.append("")
+                    result.append("To install chocolatey:")
+                    result.append("  Run in PowerShell as Administrator:")
+                    result.append("  Set-ExecutionPolicy Bypass -Scope Process -Force")
+                    result.append("  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072")
+                    result.append("  iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
+                    
+        except FileNotFoundError:
+            result.append("winget and chocolatey not found.")
+            result.append("")
+            result.append("To install winget:")
+            result.append("  Download from Microsoft Store or Microsoft website")
+            result.append("")
+            result.append("To install chocolatey:")
+            result.append("  Run in PowerShell as Administrator:")
+            result.append("  Set-ExecutionPolicy Bypass -Scope Process -Force")
+            result.append("  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072")
+            result.append("  iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
         except Exception as e:
             result.append(f"Error: {str(e)}")
         
