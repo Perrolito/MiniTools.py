@@ -812,7 +812,8 @@ if [ "$BUILD_APPIMAGE" = "true" ]; then
         echo ""
         
         # Setup paths
-        APPDIR="${BUILD_DIR}/${APP_PKG_NAME}.AppDir"
+        WORKDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-appimage"
+        APPDIR="${WORKDIR}/AppDir"
         APPIMAGE_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}.AppImage"
         APPIMAGETOOL=$(find_appimagetool)
         APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
@@ -831,7 +832,7 @@ if [ "$BUILD_APPIMAGE" = "true" ]; then
         if [ "$BUILD_APPIMAGE" = "true" ]; then
             # Clean up previous build
             print_info "Cleaning up previous AppImage build artifacts..."
-            rm -rf "$APPDIR"
+            rm -rf "$WORKDIR"
             rm -f "$APPIMAGE_OUTPUT"
             
             # Create directory structure
@@ -949,26 +950,28 @@ if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
     
     if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
         # Setup paths
-        SELF_CONTAINED_APPDIR="${BUILD_DIR}/${APP_PKG_NAME}.SelfContained.AppDir"
+        SELF_CONTAINED_APPDIR="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained-appimage"
         SELF_CONTAINED_OUTPUT="${BUILD_DIR}/${APP_PKG_NAME}-${VERSION}-${ARCH_SUFFIX}-self-contained.AppImage"
-        PYINSTALLER_DIR="${BUILD_DIR}/pyinstaller_build"
+        PYINSTALLER_DIR="${SELF_CONTAINED_APPDIR}/pyinstaller"
+        APPDIR="${SELF_CONTAINED_APPDIR}/AppDir"
         
         # Clean up previous build
         print_info "Cleaning up previous Self-Contained AppImage build artifacts..."
         rm -rf "$SELF_CONTAINED_APPDIR"
         rm -f "$SELF_CONTAINED_OUTPUT"
-        rm -rf "$PYINSTALLER_DIR"
         
-        # Create AppDir structure
-        mkdir -p "$SELF_CONTAINED_APPDIR/usr/bin"
-        mkdir -p "$SELF_CONTAINED_APPDIR/usr/share/applications"
-        mkdir -p "$SELF_CONTAINED_APPDIR/usr/share/icons/hicolor/256x256/apps"
+        # Create directory structure
+        mkdir -p "$APPDIR/usr/bin"
+        mkdir -p "$APPDIR/usr/share/applications"
+        mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
         
         # Build with PyInstaller
         print_info "Building with PyInstaller..."
         pyinstaller --onefile \
             --name "$APP_PKG_NAME" \
-            --distpath "$SELF_CONTAINED_APPDIR/usr/bin" \
+            --distpath "$APPDIR/usr/bin" \
+            --workpath "$PYINSTALLER_DIR" \
+            --specpath "$PYINSTALLER_DIR" \
             --icon="$APP_ICON_PATH" \
             --windowed \
             --hidden-import=PyQt6 \
@@ -977,7 +980,7 @@ if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
             --hidden-import=PyQt6.QtWidgets \
             "$APP_SCRIPT_PATH"
         
-        if [ ! -f "$SELF_CONTAINED_APPDIR/usr/bin/$APP_PKG_NAME" ]; then
+        if [ ! -f "$APPDIR/usr/bin/$APP_PKG_NAME" ]; then
             print_error "✗ PyInstaller build failed"
             BUILD_APPIMAGE_BUNDLE="false"
         fi
@@ -986,12 +989,12 @@ if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
     if [ "$BUILD_APPIMAGE_BUNDLE" = "true" ]; then
         # Copy icon
         if [ -f "$APP_ICON_PATH" ]; then
-            cp "$APP_ICON_PATH" "$SELF_CONTAINED_APPDIR/$APP_PKG_NAME.png"
-            cp "$APP_ICON_PATH" "$SELF_CONTAINED_APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_PKG_NAME.png"
+            cp "$APP_ICON_PATH" "$APPDIR/$APP_PKG_NAME.png"
+            cp "$APP_ICON_PATH" "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_PKG_NAME.png"
         fi
         
         # Create AppRun
-        cat > "$SELF_CONTAINED_APPDIR/AppRun" << EOF
+        cat > "$APPDIR/AppRun" << EOF
 #!/bin/bash
 SELF=\$(readlink -f "\$0")
 HERE=\${SELF%/*}
@@ -999,14 +1002,14 @@ HERE=\${SELF%/*}
 cd "\${HERE}"
 exec "\${HERE}/usr/bin/$APP_PKG_NAME" "\$@"
 EOF
-        chmod +x "$SELF_CONTAINED_APPDIR/AppRun"
+        chmod +x "$APPDIR/AppRun"
         
         # Create desktop file
-        create_desktop_file "$SELF_CONTAINED_APPDIR"
+        create_desktop_file "$APPDIR"
         
         # Build AppImage using appimagetool
         print_info "Building AppImage with appimagetool..."
-        ARCH=x86_64 "$APPIMAGETOOL" "$SELF_CONTAINED_APPDIR" "$SELF_CONTAINED_OUTPUT" 2>&1
+        ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$SELF_CONTAINED_OUTPUT" 2>&1
         
         if [ -f "$SELF_CONTAINED_OUTPUT" ]; then
             chmod +x "$SELF_CONTAINED_OUTPUT"
@@ -1015,8 +1018,21 @@ EOF
             print_error "✗ Self-contained AppImage build failed"
         fi
         
-        # Clean up PyInstaller build directory
-        rm -rf "$PYINSTALLER_DIR"
+        # Clean up PyInstaller build directory (interactive)
+        if [ -d "$PYINSTALLER_DIR" ]; then
+            print_info "PyInstaller work directory preserved at: $PYINSTALLER_DIR"
+            print_info "Contains analysis results and build artifacts useful for debugging"
+            if [ "$INTERACTIVE" = "true" ]; then
+                echo ""
+                read -p "Clean up PyInstaller work directory? [y/N]: " cleanup_response
+                if [[ "$cleanup_response" =~ ^[Yy]$ ]]; then
+                    rm -rf "$PYINSTALLER_DIR"
+                    print_success "✓ PyInstaller work directory cleaned"
+                else
+                    print_info "PyInstaller work directory kept for debugging"
+                fi
+            fi
+        fi
     fi
 fi
 
