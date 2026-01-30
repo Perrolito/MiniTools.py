@@ -23,7 +23,7 @@ set "APP_PYTHON_SCRIPT=MiniTools.py"
 set "APP_ICON=minitools.png"
 
 REM Extract version from Python script
-for /f "tokens=2 delims==" %%V in ('findstr /r "^__version__" "%APP_SCRIPT_PATH%"') do set "VERSION=%%~V"
+for /f "tokens=2 delims==" %%V in ('type "%APP_SCRIPT_PATH%" ^| findstr /C:"__version__"') do set "VERSION=%%~V"
 if "%VERSION%"=="" (
     echo [WARNING] Failed to extract version from script, using default
     set "VERSION=1.0.0"
