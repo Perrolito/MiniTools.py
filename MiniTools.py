@@ -277,6 +277,16 @@ class SystemInfoWorker(QThread):
                 "swap_windows": self.get_swap_info_windows,
                 "disk_windows": self.get_disk_info_windows
             })
+        
+        # Register macOS-specific handlers
+        if PlatformHelper.is_macos():
+            self.INFO_HANDLERS.update({
+                "cpu_macos": self.get_cpu_info_macos,
+                "memory_macos": self.get_memory_info_macos,
+                "kernel_macos": self.get_kernel_info_macos,
+                "swap_macos": self.get_swap_info_macos,
+                "disk_macos": self.get_disk_info_macos
+            })
     
     def run(self):
         """Execute the appropriate info handler based on info_type"""
@@ -293,6 +303,21 @@ class SystemInfoWorker(QThread):
                     self.error_signal.emit(f"Error: {str(e)}")
             else:
                 self.error_signal.emit(f"Windows support for {self.info_type} is not yet implemented")
+            return
+        
+        # macOS support
+        if PlatformHelper.is_macos() and self.info_type in ["update", "flatpak"]:
+            self.error_signal.emit("This feature is not supported on macOS")
+            return
+        if PlatformHelper.is_macos() and self.info_type in ["cpu", "memory", "kernel", "swap", "disk"]:
+            handler = self.INFO_HANDLERS.get(f"{self.info_type}_macos")
+            if handler:
+                try:
+                    handler()
+                except Exception as e:
+                    self.error_signal.emit(f"Error: {str(e)}")
+            else:
+                self.error_signal.emit(f"macOS support for {self.info_type} is not yet implemented")
             return
         
         handler = self.INFO_HANDLERS.get(self.info_type)
@@ -780,6 +805,254 @@ class SystemInfoWorker(QThread):
             except ImportError:
                 pass
                 
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil")
+        except Exception as e:
+            result.append(f"Error reading disk info: {str(e)}")
+        
+        output = "\n".join(result)
+        self.data_ready.emit("Disk Information", output)
+    
+    def get_cpu_info_macos(self):
+        """Get CPU information on macOS"""
+        result = []
+        
+        try:
+            import subprocess
+            import platform
+            
+            # Get CPU info using sysctl
+            # CPU brand and model
+            brand = ShellCommandHelper.get_command_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+            if brand:
+                result.append(f"Model: {brand.strip()}")
+            
+            # CPU family
+            family = ShellCommandHelper.get_command_output(["sysctl", "-n", "machdep.cpu.family"])
+            if family:
+                result.append(f"Family: {family.strip()}")
+            
+            # CPU model
+            cpu_model = ShellCommandHelper.get_command_output(["sysctl", "-n", "machdep.cpu.model"])
+            if cpu_model:
+                result.append(f"Model Number: {cpu_model.strip()}")
+            
+            # Number of physical cores
+            physical_cores = ShellCommandHelper.get_command_output(["sysctl", "-n", "hw.physicalcpu"])
+            if physical_cores:
+                result.append(f"Physical Cores: {physical_cores.strip()}")
+            
+            # Number of logical cores (threads)
+            logical_cores = ShellCommandHelper.get_command_output(["sysctl", "-n", "hw.logicalcpu"])
+            if logical_cores:
+                result.append(f"Logical Processors: {logical_cores.strip()}")
+            
+            # CPU frequency
+            freq = ShellCommandHelper.get_command_output(["sysctl", "-n", "hw.cpufrequency"])
+            if freq:
+                freq_hz = int(freq.strip())
+                result.append(f"Max Frequency: {freq_hz / 1e9:.2f} GHz")
+            
+            # L1, L2, L3 cache sizes
+            for cache_type, cache_name in [("hw.l1icachesize", "L1 Instruction Cache"),
+                                          ("hw.l1dcachesize", "L1 Data Cache"),
+                                          ("hw.l2cachesize", "L2 Cache"),
+                                          ("hw.l3cachesize", "L3 Cache")]:
+                cache_size = ShellCommandHelper.get_command_output(["sysctl", "-n", cache_type])
+                if cache_size and int(cache_size.strip()) > 0:
+                    size_bytes = int(cache_size.strip())
+                    if size_bytes >= 1024 * 1024:
+                        result.append(f"{cache_name}: {size_bytes // (1024 * 1024)} MB")
+                    else:
+                        result.append(f"{cache_name}: {size_bytes // 1024} KB")
+            
+            result.append("")
+            
+            # System info
+            result.append(f"System: {platform.system()} {platform.mac_ver()[0]}")
+            result.append(f"Architecture: {platform.machine()}")
+            
+            # CPU usage
+            try:
+                import psutil
+                cpu_percent = psutil.cpu_percent(interval=1)
+                result.append(f"CPU Usage: {cpu_percent:.1f}%")
+                
+                # CPU frequency (current)
+                freq_info = psutil.cpu_freq()
+                if freq_info:
+                    result.append(f"Current Frequency: {freq_info.current / 1000:.2f} GHz")
+            except ImportError:
+                pass
+                
+        except Exception as e:
+            result.append(f"Error reading CPU info: {str(e)}")
+        
+        self._emit_result("CPU Information", result)
+    
+    def get_memory_info_macos(self):
+        """Get memory information on macOS"""
+        result = []
+        
+        try:
+            import psutil
+            
+            mem = psutil.virtual_memory()
+            
+            total_mb = mem.total // (1024 * 1024)
+            available_mb = mem.available // (1024 * 1024)
+            used_mb = mem.used // (1024 * 1024)
+            free_mb = mem.free // (1024 * 1024)
+            
+            result.append(f"Total Memory: {total_mb} MB ({total_mb // 1024} GB)")
+            result.append(f"Used Memory: {used_mb} MB ({used_mb // 1024} GB)")
+            result.append(f"Available Memory: {available_mb} MB ({available_mb // 1024} GB)")
+            result.append(f"Free Memory: {free_mb} MB ({free_mb // 1024} GB)")
+            result.append(f"Memory Usage: {mem.percent:.1f}%")
+            result.append("")
+            
+            # Swap info
+            swap = psutil.swap_memory()
+            swap_total_mb = swap.total // (1024 * 1024)
+            swap_used_mb = swap.used // (1024 * 1024)
+            swap_free_mb = swap.free // (1024 * 1024)
+            
+            if swap_total_mb > 0:
+                result.append(f"Total Swap: {swap_total_mb} MB ({swap_total_mb // 1024} GB)")
+                result.append(f"Used Swap: {swap_used_mb} MB ({swap_used_mb // 1024} GB)")
+                result.append(f"Free Swap: {swap_free_mb} MB ({swap_free_mb // 1024} GB)")
+                result.append(f"Swap Usage: {swap.percent:.1f}%")
+            else:
+                result.append("Swap: Disabled")
+                
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil")
+        except Exception as e:
+            result.append(f"Error reading memory info: {str(e)}")
+        
+        self._emit_result("Memory Information", result)
+    
+    def get_kernel_info_macos(self):
+        """Get kernel information on macOS"""
+        result = []
+        
+        try:
+            import platform
+            import psutil
+            
+            result.append(f"System: {platform.system()}")
+            result.append(f"Release: {platform.release()}")
+            result.append(f"Version: {platform.mac_ver()[0]}")
+            result.append(f"Architecture: {platform.machine()}")
+            result.append(f"Hostname: {platform.node()}")
+            result.append(f"Processor: {platform.processor()}")
+            
+            # Get kernel version using uname
+            uname_output = ShellCommandHelper.get_command_output(["uname", "-a"])
+            if uname_output:
+                result.append("")
+                result.append(f"Kernel: {uname_output.strip()}")
+            
+            # Get boot time
+            boot_time = psutil.boot_time()
+            import datetime
+            boot_datetime = datetime.datetime.fromtimestamp(boot_time)
+            result.append(f"Boot Time: {boot_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Calculate uptime
+            uptime_seconds = datetime.datetime.now().timestamp() - boot_time
+            uptime_days = int(uptime_seconds // 86400)
+            uptime_hours = int((uptime_seconds % 86400) // 3600)
+            uptime_minutes = int((uptime_seconds % 3600) // 60)
+            result.append(f"System Uptime: {uptime_days}d {uptime_hours}h {uptime_minutes}m")
+            
+            # Get macOS version details using sw_vers
+            sw_vers_output = ShellCommandHelper.get_command_output(["sw_vers"])
+            if sw_vers_output:
+                result.append("")
+                for line in sw_vers_output.strip().split("\n"):
+                    result.append(line.strip())
+                    
+        except Exception as e:
+            result.append(f"Error reading kernel info: {str(e)}")
+        
+        self._emit_result("Kernel Information", result)
+    
+    def get_swap_info_macos(self):
+        """Get swap information on macOS"""
+        result = []
+        
+        try:
+            import psutil
+            
+            swap = psutil.swap_memory()
+            
+            swap_total_mb = swap.total // (1024 * 1024)
+            swap_used_mb = swap.used // (1024 * 1024)
+            swap_free_mb = swap.free // (1024 * 1024)
+            
+            if swap_total_mb > 0:
+                result.append(f"Total Swap: {swap_total_mb} MB ({swap_total_mb // 1024} GB)")
+                result.append(f"Used Swap: {swap_used_mb} MB ({swap_used_mb // 1024} GB)")
+                result.append(f"Free Swap: {swap_free_mb} MB ({swap_free_mb // 1024} GB)")
+                result.append(f"Swap Usage: {swap.percent:.1f}%")
+            else:
+                result.append("Swap: Disabled")
+                result.append("")
+                result.append("macOS uses compressed memory and doesn't use traditional swap files")
+                result.append("like Linux. Memory management is handled by the OS automatically.")
+            
+            # Get swap file info using sysctl
+            result.append("")
+            swap_info = ShellCommandHelper.get_command_output(["sysctl", "vm.swapusage"])
+            if swap_info:
+                result.append("Swap Usage:")
+                for line in swap_info.strip().split("\n"):
+                    result.append(line.strip())
+                    
+        except ImportError:
+            result.append("Error: Required library not installed")
+            result.append("Please install: pip install psutil")
+        except Exception as e:
+            result.append(f"Error reading swap info: {str(e)}")
+        
+        self._emit_result("Swap Information", result)
+    
+    def get_disk_info_macos(self):
+        """Get disk information on macOS"""
+        result = []
+        
+        try:
+            import psutil
+            
+            # Get disk usage
+            result.append("━━━━━━ Disk Usage ━━━━━━")
+            result.append("")
+            for partition in psutil.disk_partitions():
+                try:
+                    usage = psutil.disk_usage(partition.mountpoint)
+                    result.append(f"Device: {partition.device}")
+                    result.append(f"Mountpoint: {partition.mountpoint}")
+                    result.append(f"File system: {partition.fstype}")
+                    result.append(f"Total: {usage.total // (1024**3)} GB")
+                    result.append(f"Used: {usage.used // (1024**3)} GB")
+                    result.append(f"Free: {usage.free // (1024**3)} GB")
+                    result.append(f"Usage: {usage.percent:.1f}%")
+                    result.append("")
+                except PermissionError:
+                    continue
+            
+            # Get disk info using diskutil
+            result.append("━━━━━━ Disk Drives ━━━━━━")
+            result.append("")
+            disk_info = ShellCommandHelper.get_command_output(["diskutil", "list"])
+            if disk_info:
+                for line in disk_info.strip().split("\n"):
+                    if line.strip():
+                        result.append(line.strip())
+                        
         except ImportError:
             result.append("Error: Required library not installed")
             result.append("Please install: pip install psutil")
